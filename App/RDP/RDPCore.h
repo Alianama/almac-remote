@@ -21,6 +21,10 @@ typedef struct {
     void (*onConnected)(void *ctx, int width, int height);
     // bgra = live buffer (valid only during the callback); the consumer copies synchronously.
     void (*onImage)(void *ctx, const uint8_t *bgra, int width, int height, int stride);
+    // Clipboard (cliprdr). Buffers are valid only during the callback — copy synchronously.
+    void (*onClipboardRemoteFormats)(void *ctx, bool hasText, bool hasImage); // remote copied something
+    void (*onClipboardRemoteData)(void *ctx, uint32_t formatId, const uint8_t *data, uint32_t size);
+    void (*onClipboardDataRequested)(void *ctx, uint32_t formatId); // remote wants our clipboard
     void (*onDisconnected)(void *ctx, const char *error); // error == NULL => normal
 } RDPCoreCallbacks;
 
@@ -54,11 +58,23 @@ void rdpcore_set_diagnostic_logging(int enabled, const char *dir);
 // Live resize of the RDP desktop (via the Display Control channel).
 void rdpcore_resize(RDPCore *core, int width, int height, int scalePercent);
 
+// Clipboard (cliprdr) senders, called from the app layer:
+// announce = the local pasteboard changed, offer these formats to the remote. Returns
+// true if the announcement reached the channel (cliprdr was up) — the caller should
+// keep retrying until it does, so content copied before cliprdr connects isn't lost.
+// provide  = answer a prior onClipboardDataRequested(formatId); NULL/0 => decline.
+bool rdpcore_clipboard_announce(RDPCore *core, bool hasText, bool hasImage);
+void rdpcore_clipboard_provide(RDPCore *core, const uint8_t *data, uint32_t size);
+
 void rdpcore_mouse_move(RDPCore *core, int x, int y);
 void rdpcore_mouse_button(RDPCore *core, int button, bool down, int x, int y);
 void rdpcore_scroll(RDPCore *core, int steps, int x, int y);
 void rdpcore_key_unicode(RDPCore *core, uint16_t unicode, bool down);
 void rdpcore_key_special(RDPCore *core, int key, bool down);
+// Raw PC/AT scancode (set 1, non-extended). Used for letter/digit keys held together
+// with a modifier (e.g. Ctrl+V) — those must arrive as a real scancode, not a Unicode
+// character event, or the remote never composes them into a shortcut.
+void rdpcore_key_scancode(RDPCore *core, uint8_t code, bool down);
 
 #ifdef __cplusplus
 }

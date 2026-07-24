@@ -255,8 +255,62 @@ final class RDPNSView: NSView, RDPClientDelegate {
             client?.keySpecial(special, down: down)
             return
         }
+        // A letter/digit held with Ctrl (or Cmd, virtualized as Ctrl in flagsChanged) is a
+        // shortcut (Ctrl+V, Ctrl+C, ...) and must reach the remote as a real scancode combo —
+        // sending it as Unicode text instead leaves the modifier "held" with no matching key,
+        // so Windows never recognizes the accelerator.
+        let virtCtrl = lastModifierFlags.contains(.control) || lastModifierFlags.contains(.command)
+        if virtCtrl, let code = Self.scancode(for: e.keyCode) {
+            client?.keyScancode(code, down: down)
+            return
+        }
         if let scalar = e.charactersIgnoringModifiers?.unicodeScalars.first {
             client?.keyChar(UInt16(scalar.value & 0xFFFF), down: down)
+        }
+    }
+
+    /// macOS ANSI virtual keyCode -> PC/AT set-1 scancode, for letters and digits (the
+    /// keys used in Ctrl/Cmd shortcuts). Layout-dependent (assumes a QWERTY-like physical
+    /// layout, same assumption `specialKey` already makes).
+    static func scancode(for keyCode: UInt16) -> UInt8? {
+        switch keyCode {
+        case 0:  return 0x1E // A
+        case 1:  return 0x1F // S
+        case 2:  return 0x20 // D
+        case 3:  return 0x21 // F
+        case 4:  return 0x23 // H
+        case 5:  return 0x22 // G
+        case 6:  return 0x2C // Z
+        case 7:  return 0x2D // X
+        case 8:  return 0x2E // C
+        case 9:  return 0x2F // V
+        case 11: return 0x30 // B
+        case 12: return 0x10 // Q
+        case 13: return 0x11 // W
+        case 14: return 0x12 // E
+        case 15: return 0x13 // R
+        case 16: return 0x15 // Y
+        case 17: return 0x14 // T
+        case 31: return 0x18 // O
+        case 32: return 0x16 // U
+        case 34: return 0x17 // I
+        case 35: return 0x19 // P
+        case 37: return 0x26 // L
+        case 38: return 0x24 // J
+        case 40: return 0x25 // K
+        case 45: return 0x31 // N
+        case 46: return 0x32 // M
+        case 18: return 0x02 // 1
+        case 19: return 0x03 // 2
+        case 20: return 0x04 // 3
+        case 21: return 0x05 // 4
+        case 23: return 0x06 // 5
+        case 22: return 0x07 // 6
+        case 26: return 0x08 // 7
+        case 28: return 0x09 // 8
+        case 25: return 0x0A // 9
+        case 29: return 0x0B // 0
+        default: return nil
         }
     }
 

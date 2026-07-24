@@ -48,6 +48,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)scrollSteps:(int)steps x:(int)x y:(int)y;                  // + up, - down
 - (void)keyChar:(uint16_t)unicode down:(BOOL)down;
 - (void)keySpecial:(NSInteger)key down:(BOOL)down;                 // see RDPKey* below
+// Raw PC/AT scancode (set 1, non-extended) — for a letter/digit held with a modifier
+// (e.g. Ctrl+V), which must reach the remote as a real key combo, not typed text.
+- (void)keyScancode:(uint8_t)code down:(BOOL)down;
 
 @end
 

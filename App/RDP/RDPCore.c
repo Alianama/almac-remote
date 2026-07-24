@@ -16,9 +16,12 @@
 #include <freerdp/codec/color.h>
 #include <freerdp/input.h>
 #include <freerdp/event.h>
+#include <freerdp/client/cliprdr.h>
+#include <freerdp/channels/cliprdr.h>
 #include <winpr/synch.h>
 #include <winpr/error.h>
 #include <winpr/wlog.h>
+#include <winpr/user.h>               // CF_UNICODETEXT / CF_DIB / CF_DIBV5
 
 #include <openssl/provider.h>
 
@@ -93,6 +96,16 @@ struct RDPCore {
 
     DispClientContext *disp;
 
+    // cliprdr is assigned on the RDP thread (channel connect) but read from the main
+    // thread (clipboard senders); chanLock guards it so a disconnect racing a
+    // main-thread call can't dereference a torn-down channel.
+    pthread_mutex_t chanLock;
+    CliprdrClientContext *cliprdr;
+    int clipboardReady;            // MonitorReady/Capabilities handshake finished
+    UINT32 pendingClipboardFormat; // format of the request currently awaiting a reply
+    UINT32 clipboardWantedFormat;  // latest format the remote offered
+    int clipboardRequestInFlight;  // a ClientFormatDataRequest is outstanding
+
     RDPCoreCallbacks cb;
     void *ctx;
 };
@@ -128,24 +141,138 @@ static BOOL mrng_desktop_resize(rdpContext *context) {
     return TRUE;
 }
 
+// MARK: - Clipboard (cliprdr)
+
+// Reply to the initial "monitor ready" with our capabilities, then an (empty) format
+// list, as MS-RDPECLIP expects. We never declared CB_USE_LONG_FORMAT_NAMES support to
+// the server before (no ClientCapabilities PDU at all) — some hosts then ack our Format
+// List (CB_RESPONSE_OK) but never actually recognize the offered format, since they
+// fall back to short-format-name parsing the client never opted out of.
+static UINT mrng_cliprdr_monitor_ready(CliprdrClientContext *cliprdr, const CLIPRDR_MONITOR_READY *e) {
+    (void)e;
+    RDPCore *core = (RDPCore *)cliprdr->custom;
+    CLIPRDR_GENERAL_CAPABILITY_SET generalCaps = {0};
+    generalCaps.capabilitySetType = CB_CAPSTYPE_GENERAL;
+    generalCaps.capabilitySetLength = CB_CAPSTYPE_GENERAL_LEN;
+    generalCaps.version = CB_CAPS_VERSION_2;
+    generalCaps.generalFlags = CB_USE_LONG_FORMAT_NAMES;
+    CLIPRDR_CAPABILITIES caps = {0};
+    caps.cCapabilitiesSets = 1;
+    caps.capabilitySets = (CLIPRDR_CAPABILITY_SET *)&generalCaps;
+    UINT capsRc = cliprdr->ClientCapabilities(cliprdr, &caps);
+    WLog_INFO("mrng.cliprdr", "monitor_ready: ClientCapabilities rc=0x%08X", capsRc);
+
+    CLIPRDR_FORMAT_LIST list = {0};
+    UINT rc = cliprdr->ClientFormatList(cliprdr, &list);
+    WLog_INFO("mrng.cliprdr", "monitor_ready: ClientFormatList rc=0x%08X", rc);
+    // Only now is the handshake actually done — before this, an announce sent by the
+    // app (e.g. offering clipboard content that predates the connection) would race
+    // ahead of capability negotiation and could be silently ignored by the server.
+    pthread_mutex_lock(&core->chanLock);
+    core->clipboardReady = 1;
+    pthread_mutex_unlock(&core->chanLock);
+    return rc;
+}
+
+// Issue a single data request and mark it in flight. pendingClipboardFormat then
+// always matches the one response we're waiting for.
+static void mrng_cliprdr_issue_request(CliprdrClientContext *cliprdr, RDPCore *core, UINT32 fmt) {
+    core->clipboardRequestInFlight = 1;
+    core->pendingClipboardFormat = fmt;
+    CLIPRDR_FORMAT_DATA_REQUEST req = {0};
+    req.requestedFormatId = fmt;
+    cliprdr->ClientFormatDataRequest(cliprdr, &req);
+}
+
+// Remote copied something: ack the list, report the formats, and fetch the best one
+// (text preferred, else image). Only one request is outstanding at a time so a
+// response is never attributed to a format from a later, overlapping list.
+static UINT mrng_cliprdr_server_format_list(CliprdrClientContext *cliprdr, const CLIPRDR_FORMAT_LIST *fl) {
+    RDPCore *core = (RDPCore *)cliprdr->custom;
+    bool hasText = false;
+    UINT32 imageFormat = 0; // prefer CF_DIB, fall back to CF_DIBV5 if that's all the server offers
+    for (UINT32 i = 0; i < fl->numFormats; i++) {
+        UINT32 id = fl->formats[i].formatId;
+        if (id == CF_UNICODETEXT) hasText = true;
+        else if (id == CF_DIB) imageFormat = CF_DIB;
+        else if (id == CF_DIBV5 && imageFormat == 0) imageFormat = CF_DIBV5;
+    }
+    CLIPRDR_FORMAT_LIST_RESPONSE resp = {0};
+    resp.common.msgFlags = CB_RESPONSE_OK;
+    cliprdr->ClientFormatListResponse(cliprdr, &resp);
+
+    if (core->cb.onClipboardRemoteFormats)
+        core->cb.onClipboardRemoteFormats(core->ctx, hasText, imageFormat != 0);
+
+    UINT32 want = hasText ? CF_UNICODETEXT : imageFormat;
+    core->clipboardWantedFormat = want;
+    if (want && !core->clipboardRequestInFlight)
+        mrng_cliprdr_issue_request(cliprdr, core, want);
+    return CHANNEL_RC_OK;
+}
+
+// Remote pasted (asked for our clipboard): hand the format id to the app, which
+// answers asynchronously via rdpcore_clipboard_provide().
+static UINT mrng_cliprdr_server_format_data_request(CliprdrClientContext *cliprdr,
+                                                     const CLIPRDR_FORMAT_DATA_REQUEST *req) {
+    RDPCore *core = (RDPCore *)cliprdr->custom;
+    WLog_INFO("mrng.cliprdr", "server_format_data_request: server wants format 0x%08X",
+              req->requestedFormatId);
+    if (core->cb.onClipboardDataRequested)
+        core->cb.onClipboardDataRequested(core->ctx, req->requestedFormatId);
+    return CHANNEL_RC_OK;
+}
+
+// Remote delivered the data we requested -> push it to the local pasteboard.
+static UINT mrng_cliprdr_server_format_data_response(CliprdrClientContext *cliprdr,
+                                                     const CLIPRDR_FORMAT_DATA_RESPONSE *resp) {
+    RDPCore *core = (RDPCore *)cliprdr->custom;
+    if ((resp->common.msgFlags & CB_RESPONSE_OK) && core->cb.onClipboardRemoteData)
+        core->cb.onClipboardRemoteData(core->ctx, core->pendingClipboardFormat,
+                                       resp->requestedFormatData, resp->common.dataLen);
+    // Request complete. If the remote offered a different format meanwhile, fetch it now.
+    core->clipboardRequestInFlight = 0;
+    if (core->clipboardWantedFormat && core->clipboardWantedFormat != core->pendingClipboardFormat)
+        mrng_cliprdr_issue_request(cliprdr, core, core->clipboardWantedFormat);
+    return CHANNEL_RC_OK;
+}
+
 // MARK: - Channels (disp for live resize)
 
 static void on_channel_connected(void *context, const ChannelConnectedEventArgs *e) {
     rdpContext *ctx = (rdpContext *)context;
+    RDPCore *core = coreFromContext(ctx);
     if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0) {
-        coreFromContext(ctx)->disp = (DispClientContext *)e->pInterface;
+        core->disp = (DispClientContext *)e->pInterface;
     } else if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0) {
         // Wire the GFX pipeline to gdi -> codec updates (H264/progressive) land in the framebuffer.
         if (ctx->gdi) gdi_graphics_pipeline_init(ctx->gdi, (RdpgfxClientContext *)e->pInterface);
+    } else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0) {
+        // cliprdr is a STATIC (SVC) channel — same PubSub event, _SVC_ name macro.
+        CliprdrClientContext *c = (CliprdrClientContext *)e->pInterface;
+        c->custom = core;
+        c->MonitorReady = mrng_cliprdr_monitor_ready;
+        c->ServerFormatList = mrng_cliprdr_server_format_list;
+        c->ServerFormatDataRequest = mrng_cliprdr_server_format_data_request;
+        c->ServerFormatDataResponse = mrng_cliprdr_server_format_data_response;
+        pthread_mutex_lock(&core->chanLock);
+        core->cliprdr = c;
+        pthread_mutex_unlock(&core->chanLock);
     }
 }
 
 static void on_channel_disconnected(void *context, const ChannelDisconnectedEventArgs *e) {
     rdpContext *ctx = (rdpContext *)context;
+    RDPCore *core = coreFromContext(ctx);
     if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0) {
-        coreFromContext(ctx)->disp = NULL;
+        core->disp = NULL;
     } else if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0) {
         if (ctx->gdi) gdi_graphics_pipeline_uninit(ctx->gdi, (RdpgfxClientContext *)e->pInterface);
+    } else if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0) {
+        pthread_mutex_lock(&core->chanLock);
+        core->cliprdr = NULL;
+        core->clipboardReady = 0;
+        pthread_mutex_unlock(&core->chanLock);
     }
 }
 
@@ -272,6 +399,7 @@ RDPCore *rdpcore_create(const char *host, int port, const char *user,
                         RDPCoreCallbacks cb, void *ctx) {
     RDPCore *core = calloc(1, sizeof(RDPCore));
     if (!core) return NULL;
+    pthread_mutex_init(&core->chanLock, NULL);
     core->host = dupstr(host);
     core->user = dupstr(user);
     core->domain = dupstr(domain);
@@ -327,6 +455,8 @@ RDPCore *rdpcore_create(const char *host, int port, const char *user,
     freerdp_settings_set_bool(s, FreeRDP_GfxAVC444v2, TRUE);
     freerdp_settings_set_bool(s, FreeRDP_RemoteFxCodec, TRUE);
     freerdp_settings_set_bool(s, FreeRDP_NetworkAutoDetect, TRUE);
+    // Clipboard both ways (text + image), wired in on_channel_connected(cliprdr).
+    freerdp_settings_set_bool(s, FreeRDP_RedirectClipboard, TRUE);
 
     return core;
 }
@@ -351,6 +481,7 @@ void rdpcore_free(RDPCore *core) {
         core->context = NULL;
     }
     free(core->host); free(core->user); free(core->domain); free(core->pass);
+    pthread_mutex_destroy(&core->chanLock);
     free(core);
 }
 
@@ -370,6 +501,48 @@ void rdpcore_resize(RDPCore *core, int width, int height, int scalePercent) {
     layout.DesktopScaleFactor = (UINT32)core->scalePercent;
     layout.DeviceScaleFactor = deviceScaleFor(core->scalePercent);
     disp->SendMonitorLayout(disp, 1, &layout);
+}
+
+// MARK: - Clipboard senders
+
+// Returns true if the announcement actually reached the channel AND the MS-RDPECLIP
+// handshake (capabilities + monitor ready) has finished. The caller keeps retrying
+// until this is true, so a clipboard that existed before the session (or before the
+// handshake completes) isn't silently lost to a message the server ignores.
+bool rdpcore_clipboard_announce(RDPCore *core, bool hasText, bool hasImage) {
+    if (!core) return false;
+    pthread_mutex_lock(&core->chanLock);
+    CliprdrClientContext *c = core->clipboardReady ? core->cliprdr : NULL;
+    bool sent = false;
+    if (c) {
+        CLIPRDR_FORMAT formats[2];
+        memset(formats, 0, sizeof(formats));
+        UINT32 n = 0;
+        if (hasText)  { formats[n].formatId = CF_UNICODETEXT; n++; }
+        if (hasImage) { formats[n].formatId = CF_DIB;         n++; }
+        CLIPRDR_FORMAT_LIST list = {0};
+        list.numFormats = n;
+        list.formats = n ? formats : NULL;
+        c->ClientFormatList(c, &list);
+        sent = true;
+    }
+    pthread_mutex_unlock(&core->chanLock);
+    return sent;
+}
+
+void rdpcore_clipboard_provide(RDPCore *core, const uint8_t *data, uint32_t size) {
+    if (!core) return;
+    WLog_INFO("mrng.cliprdr", "clipboard_provide: size=%u cliprdrUp=%d", size, core->cliprdr != NULL);
+    pthread_mutex_lock(&core->chanLock);
+    CliprdrClientContext *c = core->cliprdr;
+    if (c) {
+        CLIPRDR_FORMAT_DATA_RESPONSE resp = {0};
+        resp.common.msgFlags = (data && size) ? CB_RESPONSE_OK : CB_RESPONSE_FAIL;
+        resp.common.dataLen = size;
+        resp.requestedFormatData = (const BYTE *)data;
+        c->ClientFormatDataResponse(c, &resp); // FreeRDP consumes the buffer synchronously
+    }
+    pthread_mutex_unlock(&core->chanLock);
 }
 
 static rdpInput *coreInput(RDPCore *core) {
@@ -429,7 +602,18 @@ void rdpcore_key_special(RDPCore *core, int key, bool down) {
         case RDPCORE_KEY_COMMAND:   code = 0x5B; ext = TRUE; break;
         default: return;
     }
-    UINT16 flags = down ? KBD_FLAGS_DOWN : KBD_FLAGS_RELEASE;
+    // A fresh key press is flags=0; KBD_FLAGS_DOWN (0x4000) means "already down"
+    // (auto-repeat) per input.h, and KBD_FLAGS_RELEASE is key-up — matching the
+    // unicode and scancode paths above. Sending KBD_FLAGS_DOWN on press made
+    // Windows see every Ctrl-down as a repeat of a key never seen going down, so
+    // the modifier never latched and shortcuts like Ctrl+V silently did nothing.
+    UINT16 flags = down ? 0 : KBD_FLAGS_RELEASE;
     if (ext) flags |= KBD_FLAGS_EXTENDED;
+    freerdp_input_send_keyboard_event(in, flags, code);
+}
+
+void rdpcore_key_scancode(RDPCore *core, uint8_t code, bool down) {
+    rdpInput *in = coreInput(core); if (!in) return;
+    UINT16 flags = down ? 0 : KBD_FLAGS_RELEASE;
     freerdp_input_send_keyboard_event(in, flags, code);
 }

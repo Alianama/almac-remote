@@ -12,6 +12,7 @@ import MRNGCore
 final class SSHTunnel {
     let localPort: Int
     private let process: Process
+    private let askpassScriptPath: String?
 
     /// Starts the tunnel process immediately (spawn only — use `waitUntilReady()`
     /// before connecting the real session). Returns nil if no free local port
@@ -29,16 +30,29 @@ final class SSHTunnel {
             target,
         ]
         let p = Process()
-        if !proxyPassword.isEmpty, let sshpass = TerminalContainer.sshpassPath() {
-            p.executableURL = URL(fileURLWithPath: sshpass)
-            p.arguments = ["-p", proxyPassword, "/usr/bin/ssh"] + sshArgs
-        } else {
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-            p.arguments = sshArgs
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        p.arguments = sshArgs
+
+        // This tunnel has no pty, so a plain `ssh` can't prompt for a password — it
+        // would just fail auth silently. SSH_ASKPASS is the native, dependency-free
+        // way to feed one non-interactively (SSH_ASKPASS_REQUIRE=force makes ssh use
+        // it even with no DISPLAY/tty, supported since OpenSSH 8.4). The password
+        // goes through an env var (not argv), which also keeps it out of `ps`.
+        var askpassPath: String?
+        var env = ProcessInfo.processInfo.environment
+        if !proxyPassword.isEmpty, let script = SSHTunnel.writeAskpassScript() {
+            askpassPath = script
+            env["SSH_ASKPASS"] = script
+            env["SSH_ASKPASS_REQUIRE"] = "force"
+            env["MRNG_SSH_TUNNEL_ASKPASS_SECRET"] = proxyPassword
         }
+        p.environment = env
+        askpassScriptPath = askpassPath
+
         do {
             try p.run()
         } catch {
+            if let path = askpassPath { try? FileManager.default.removeItem(atPath: path) }
             return nil
         }
         process = p
@@ -46,6 +60,17 @@ final class SSHTunnel {
 
     func stop() {
         if process.isRunning { process.terminate() }
+        if let path = askpassScriptPath { try? FileManager.default.removeItem(atPath: path) }
+    }
+
+    /// A one-line script that hands ssh the password via an env var (never written
+    /// to disk itself, never in argv). 0700 so only this user can read/execute it.
+    private static func writeAskpassScript() -> String? {
+        let path = NSTemporaryDirectory() + "mrng-askpass-\(UUID().uuidString).sh"
+        let script = "#!/bin/sh\nexec echo \"$MRNG_SSH_TUNNEL_ASKPASS_SECRET\"\n"
+        guard (try? script.write(toFile: path, atomically: true, encoding: .utf8)) != nil else { return nil }
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path)
+        return path
     }
 
     /// Polls `127.0.0.1:localPort` until it accepts a TCP connection, or times out.
