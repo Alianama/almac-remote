@@ -29,8 +29,9 @@ VERSION="${1:-v0.1.0-alpha}"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/.build-release"
 DIST_DIR="$PROJECT_ROOT/.dist"
-APP_NAME="AlmacRemote"
-DMG_NAME="${APP_NAME}-${VERSION}.dmg"
+PROJECT_NAME="AlmacRemote"    # xcodeproj/scheme name (project.yml `name:`)
+APP_NAME="Almac Remote"       # PRODUCT_NAME — actual .app/binary filename
+DMG_NAME="AlmacRemote-${VERSION}.dmg"
 ENTITLEMENTS="$PROJECT_ROOT/build/entitlements.plist"
 
 # Developer ID signing config. Set DEVELOPER_ID="-" via env to force ad-hoc.
@@ -58,12 +59,12 @@ echo "==> Building Release (sign mode: $SIGN_MODE)"
 if [ "$SIGN_MODE" = "developer-id" ]; then
     # Build unsigned; we sign by hand after install_name_tool surgery anyway.
     # Hardened Runtime is enabled at codesign time via --options runtime.
-    xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" \
+    xcodebuild -project "$PROJECT_NAME.xcodeproj" -scheme "$PROJECT_NAME" \
       -configuration Release -derivedDataPath "$BUILD_DIR" \
       CODE_SIGN_IDENTITY="-" CODE_SIGNING_ALLOWED=YES \
       build >/dev/null
 else
-    xcodebuild -project "$APP_NAME.xcodeproj" -scheme "$APP_NAME" \
+    xcodebuild -project "$PROJECT_NAME.xcodeproj" -scheme "$PROJECT_NAME" \
       -configuration Release -derivedDataPath "$BUILD_DIR" \
       CODE_SIGN_IDENTITY="-" CODE_SIGNING_ALLOWED=YES \
       build >/dev/null
