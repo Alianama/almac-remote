@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * mRemoteNXT — Copyright (c) 2026 Razvan Cremenescu
+ * Almac Remote — based on mRemoteNXT, Copyright (c) 2026 Razvan Cremenescu
  * See LICENSE for full text.
  */
 
@@ -22,7 +22,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (nonatomic, weak) id<RDPClientDelegate> delegate;
 
-/// Enable/disable FreeRDP diagnostic logging to <directory>/mRemoteNXT.log (DEBUG level).
+/// Enable/disable FreeRDP diagnostic logging to <directory>/AlmacRemote.log (DEBUG level).
 + (void)setDiagnosticLogging:(BOOL)enabled directory:(NSString *)directory;
 
 /// One-time OpenSSL init: loads the legacy provider so NTLM (MD4) works against

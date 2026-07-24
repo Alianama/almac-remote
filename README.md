@@ -1,4 +1,4 @@
-# mRemoteNXT
+# Almac Remote
 
 > Romanian: see [README.ro.md](README.ro.md)
 
@@ -76,20 +76,9 @@ ranges, no real hosts.
 
 ## Installation
 
-### Option A: pre-built `.dmg` (recommended)
-
-Download the latest `mRemoteNXT-vX.Y.Z-alpha.dmg` from
-[Releases](https://github.com/cremenescu/mRemoteNXT/releases),
-open it, drag the app to the Applications shortcut, then open it.
-
-The app is **signed with a Developer ID and notarized by Apple**, so it
-opens with no Gatekeeper warning and no `xattr` workaround. No Homebrew
-install required — FreeRDP and friends are bundled inside the app.
-
-### Option B: build from source
-
-See [BUILD.md](BUILD.md). Requires Xcode, Homebrew, `freerdp`,
-`xcodegen`. Run `./build/package.sh` to produce your own `.dmg`.
+Build from source — see [BUILD.md](BUILD.md). Requires Xcode, Homebrew,
+`freerdp`, `xcodegen`. Run `./build/package.sh` to produce your own signed
+`.dmg` (needs your own Developer ID + notarization credentials).
 
 ## License
 
@@ -103,6 +92,8 @@ their code) from observation of real files produced by mRemoteNG.
 
 ## Credits / dependencies
 
+- [mRemoteNXT](https://github.com/cremenescu/mRemoteNXT) — this project is
+  a private fork of mRemoteNXT by Razvan Cremenescu (GPL-2.0-or-later).
 - [mRemoteNG](https://github.com/mRemoteNG/mRemoteNG) — `confCons.xml`
   format and icon set (GPL-2.0).
 - [FreeRDP](https://github.com/FreeRDP/FreeRDP) — RDP client library
@@ -111,16 +102,11 @@ their code) from observation of real files produced by mRemoteNG.
   emulator (MIT).
 - Apple SwiftUI / AppKit / WebKit / CryptoKit / CommonCrypto.
 
-## Impostor repositories
+## Fork note
 
-The only official mRemoteNXT repository is
-**<https://github.com/cremenescu/mRemoteNXT>**. Releases (`.dmg`) are
-published only there.
-
-Any other repository on GitHub using the name "mRemoteNXT" is unaffiliated
-and may be malicious. The project is **Swift only** — if a repo claiming to
-be mRemoteNXT contains Lua, Python, JavaScript or pre-built executables,
-do not clone it and do not run anything from it.
+Almac Remote is a private, internal fork of mRemoteNXT — not published or
+distributed publicly. No Sparkle auto-update, no GitHub releases; build it
+yourself per [BUILD.md](BUILD.md).
 
 ## Disclaimer
 

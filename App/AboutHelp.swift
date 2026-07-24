@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// mRemoteNXT — Copyright (c) 2026 Razvan Cremenescu
+// Almac Remote — based on mRemoteNXT, Copyright (c) 2026 Razvan Cremenescu
 // See LICENSE for full text.
 
 import SwiftUI
 import AppKit
 
-/// Custom About panel for mRemoteNXT — replaces the auto-generated one so we
-/// can add author/email/repo links inside the standard NSApp About window.
+/// Custom About panel for Almac Remote — replaces the auto-generated one so we
+/// can add credits inside the standard NSApp About window.
 enum AboutPanel {
     static func show() {
         let credits = NSMutableAttributedString()
@@ -27,17 +27,7 @@ enum AboutPanel {
         ]
 
         credits.append(NSAttributedString(
-            string: "Razvan Cremenescu\n", attributes: body))
-        credits.append(linkLine(
-            text: "razvan@cremenescu.ro",
-            url: "mailto:razvan@cremenescu.ro",
-            attributes: body))
-        credits.append(NSAttributedString(string: "\n", attributes: body))
-        credits.append(linkLine(
-            text: "github.com/cremenescu/mRemoteNXT",
-            url: "https://github.com/cremenescu/mRemoteNXT",
-            attributes: body))
-        credits.append(NSAttributedString(string: "\n\n", attributes: secondary))
+            string: "Based on mRemoteNXT by Razvan Cremenescu\n\n", attributes: body))
         credits.append(NSAttributedString(
             string: "Released under GPL-2.0-or-later. " +
                     "Bundles FreeRDP (Apache-2.0) and SwiftTerm (MIT). " +
@@ -46,7 +36,7 @@ enum AboutPanel {
             attributes: secondary))
 
         let opts: [NSApplication.AboutPanelOptionKey: Any] = [
-            .applicationName: "mRemoteNXT",
+            .applicationName: "Almac Remote",
             .applicationVersion: marketingVersion(),
             .version: buildVersion(),
             .credits: credits,
@@ -116,7 +106,6 @@ struct HelpView: View {
                 section(title: t("Help.Shortcuts.Title"), body: t("Help.Shortcuts.Body"))
                 section(title: t("Help.Tips.Title"), body: t("Help.Tips.Body"))
                 section(title: t("Help.Limitations.Title"), body: t("Help.Limitations.Body"))
-                links
             }
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -131,7 +120,7 @@ struct HelpView: View {
                 Image(nsImage: icon).resizable().frame(width: 56, height: 56)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("mRemoteNXT").font(.title2).bold()
+                Text("Almac Remote").font(.title2).bold()
                 Text(t("Help.Tagline")).foregroundStyle(.secondary)
             }
         }
@@ -146,26 +135,4 @@ struct HelpView: View {
         }
     }
 
-    private var links: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Divider().padding(.vertical, 4)
-            Text(t("Help.MoreInfo")).font(.headline)
-            link("github.com/cremenescu/mRemoteNXT",
-                 url: "https://github.com/cremenescu/mRemoteNXT")
-            link(t("Help.OpenIssue"),
-                 url: "https://github.com/cremenescu/mRemoteNXT/issues/new")
-            link(t("Help.Email"),
-                 url: "mailto:razvan@cremenescu.ro")
-        }
-    }
-
-    private func link(_ text: String, url: String) -> some View {
-        Button {
-            if let u = URL(string: url) { NSWorkspace.shared.open(u) }
-        } label: {
-            Label(text, systemImage: "arrow.up.right.square")
-                .foregroundStyle(Color.accentColor)
-        }
-        .buttonStyle(.plain)
-    }
 }

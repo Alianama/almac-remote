@@ -1,6 +1,6 @@
 # examples/
 
-Sample data for trying out mRemoteNXT without exposing any real
+Sample data for trying out Almac Remote without exposing any real
 credentials.
 
 ## `demo-config.xml`

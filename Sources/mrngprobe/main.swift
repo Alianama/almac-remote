@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// mRemoteNXT — Copyright (c) 2026 Razvan Cremenescu
+// Almac Remote — based on mRemoteNXT, Copyright (c) 2026 Razvan Cremenescu
 // See LICENSE for full text.
 
 import Foundation
@@ -58,6 +58,34 @@ do {
         let ok = MRNGCrypto.decrypt(base64: p.encryptedPassword, password: pw, iterations: doc2.kdfIterations) != nil
         print("Password preserved after serialize: \(ok ? "OK" : "FAILED")")
     }
+
+    // TOTP self-check: "MZXW6YTBOI======" is the well-known RFC 4648 Base32
+    // encoding of "foobar" — just needs to decode + produce a stable 6-digit
+    // code, and reject a non-Base32 secret.
+    let totpCode = TOTP.code(secretBase32: "MZXW6YTBOI======")
+    let totpOK = totpCode != nil && totpCode?.count == 6 && totpCode!.allSatisfy(\.isNumber)
+        && totpCode == TOTP.code(secretBase32: "MZXW6YTBOI======")
+    print("TOTP code generation: \(totpOK ? "OK (\(totpCode!))" : "FAILED")")
+    print("TOTP invalid secret rejected: \(TOTP.code(secretBase32: "not-base32!!!") == nil ? "OK" : "FAILED")")
+
+    // SSH local-forward parsing self-check: blank lines and "#" comments must
+    // be dropped, real rules kept in order.
+    let fwdNode = MRNGNode(id: "test", name: "fwd-test", isContainer: false, attributes: [
+        "SSHLocalForwards": "3389:10.54.18.110:3389\n\n# comment\n8081:10.62.70.69:8081\n  \n3389:10.54.18.99:3389",
+    ])
+    let expectedForwards = ["3389:10.54.18.110:3389", "8081:10.62.70.69:8081", "3389:10.54.18.99:3389"]
+    print("SSH local-forward parsing: \(fwdNode.sshLocalForwards == expectedForwards ? "OK" : "FAILED (\(fwdNode.sshLocalForwards))")")
+
+    // ProxyJump "user@host[:port]" parsing self-check.
+    let p1 = ProxyJumpTarget("user@10.54.18.42")
+    let p2 = ProxyJumpTarget("user@10.54.18.42:2222")
+    let p3 = ProxyJumpTarget("10.54.18.42")
+    let p4 = ProxyJumpTarget("")
+    let proxyOK = p1?.user == "user" && p1?.host == "10.54.18.42" && p1?.port == 22
+        && p2?.port == 2222
+        && p3?.user == "" && p3?.host == "10.54.18.42"
+        && p4 == nil
+    print("ProxyJump parsing: \(proxyOK ? "OK" : "FAILED")")
 } catch {
     print("Parse error: \(error)")
     exit(1)

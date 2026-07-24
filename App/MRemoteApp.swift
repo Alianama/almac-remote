@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// mRemoteNXT — Copyright (c) 2026 Razvan Cremenescu
+// Almac Remote — based on mRemoteNXT, Copyright (c) 2026 Razvan Cremenescu
 // See LICENSE for full text.
 
 import SwiftUI
-import Sparkle
 
 @main
 struct MRemoteApp: App {
@@ -11,14 +10,7 @@ struct MRemoteApp: App {
     @StateObject private var lang = LanguageManager.shared
     @Environment(\.openWindow) private var openWindow
 
-    // Sparkle auto-updater. Held for the app's lifetime (no AppDelegate in a
-    // SwiftUI app). startingUpdater: true starts it now and schedules the
-    // automatic background checks (interval from SUScheduledCheckInterval).
-    private let updaterController: SPUStandardUpdaterController
-
     init() {
-        updaterController = SPUStandardUpdaterController(
-            startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
         // Faster tooltips (macOS default is around 2 seconds).
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 500])
         // SwiftUI's Settings scene refuses manual resize; we use a Window(id:)
@@ -42,8 +34,6 @@ struct MRemoteApp: App {
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button(t("Menu.About")) { AboutPanel.show() }
-                Divider()
-                CheckForUpdatesView(updater: updaterController.updater)
             }
             CommandGroup(replacing: .appSettings) {
                 Button(t("Settings.Title")) { openWindow(id: "preferences") }
@@ -51,22 +41,6 @@ struct MRemoteApp: App {
             }
             CommandGroup(replacing: .help) {
                 Button(t("Menu.HelpWindow")) { HelpWindow.show() }
-                Divider()
-                Button(t("Menu.ViewOnGitHub")) {
-                    if let u = URL(string: "https://github.com/cremenescu/mRemoteNXT") {
-                        NSWorkspace.shared.open(u)
-                    }
-                }
-                Button(t("Menu.ReportIssue")) {
-                    if let u = URL(string: "https://github.com/cremenescu/mRemoteNXT/issues/new") {
-                        NSWorkspace.shared.open(u)
-                    }
-                }
-                Button(t("Menu.EmailAuthor")) {
-                    if let u = URL(string: "mailto:razvan@cremenescu.ro") {
-                        NSWorkspace.shared.open(u)
-                    }
-                }
             }
             CommandGroup(replacing: .newItem) {
                 Button(t("Menu.NewFile")) { model.newDocumentPanel() }
@@ -78,16 +52,25 @@ struct MRemoteApp: App {
                     .keyboardShortcut("w", modifiers: [.command, .shift])
                     .disabled(model.doc == nil)
             }
-            CommandGroup(after: .saveItem) {
-                Button(t("Menu.Save")) { model.save() }
-                    .keyboardShortcut("s")
-                    .disabled(!model.dirty)
-            }
             CommandGroup(after: .toolbar) {
                 Button(t("Menu.ZoomIn")) { model.zoomTerminal(+1) }
                     .keyboardShortcut("=", modifiers: .command)
                 Button(t("Menu.ZoomOut")) { model.zoomTerminal(-1) }
                     .keyboardShortcut("-", modifiers: .command)
+            }
+            CommandMenu(t("Security.Menu")) {
+                Button(t("Security.LockNow")) { model.lockNow() }
+                    .keyboardShortcut("l", modifiers: [.command, .control])
+                    .disabled(!model.lockEnabled || model.isLocked)
+                Divider()
+                Toggle(t("Security.LockWhenIdle"), isOn: $model.lockEnabled)
+                Picker(t("Security.IdleTimeout"), selection: $model.idleLockMinutes) {
+                    Text(t("Security.1Minute")).tag(1.0)
+                    Text(t("Security.5Minutes")).tag(5.0)
+                    Text(t("Security.15Minutes")).tag(15.0)
+                    Text(t("Security.30Minutes")).tag(30.0)
+                }
+                .disabled(!model.lockEnabled)
             }
         }
 
@@ -123,6 +106,7 @@ struct SettingsView: View {
 
 struct AppearanceSettings: View {
     @EnvironmentObject var model: AppModel
+    @State private var showThemePicker = false
     var body: some View {
         Form {
             Section(t("Settings.Appearance")) {
@@ -134,8 +118,23 @@ struct AppearanceSettings: View {
                     Text(String(format: t("Settings.TerminalFontSize"), Int(model.terminalFontSize)))
                     Slider(value: $model.terminalFontSize, in: 8...28, step: 1)
                 }
-                Picker(t("Settings.TerminalTheme"), selection: $model.terminalTheme) {
-                    ForEach(TerminalThemes.names, id: \.self) { Text($0).tag($0) }
+                HStack {
+                    Text(t("Settings.TerminalTheme"))
+                    Spacer()
+                    Button {
+                        showThemePicker = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            ThemeSwatchView(theme: model.terminalTheme == "Implicit" ? nil : TerminalThemes.theme(named: model.terminalTheme))
+                                .frame(width: 28, height: 18)
+                            Text(model.terminalTheme)
+                            Image(systemName: "chevron.up.chevron.down").font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+                .sheet(isPresented: $showThemePicker) {
+                    ThemePickerSheet().environmentObject(model)
                 }
                 Picker(t("Settings.CursorBlink"), selection: $model.cursorBlinkSpeed) {
                     ForEach(CursorBlinkSpeed.allCases) { s in

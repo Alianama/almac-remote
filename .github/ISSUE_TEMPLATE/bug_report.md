@@ -28,7 +28,7 @@ assignees: cremenescu
 
 - macOS version: <!-- e.g. macOS 15.3 / Sonoma 14.7 -->
 - Hardware: <!-- e.g. Apple Silicon M2 / Intel -->
-- mRemoteNXT version: <!-- Help > About mRemoteNXT (e.g. 0.1.0) -->
+- Almac Remote version: <!-- Help > About Almac Remote (e.g. 0.1.0) -->
 - Installed from: <!-- .dmg from Releases / built from source -->
 - Protocol involved: <!-- SSH / RDP / Telnet / SFTP / HTTP / none / N/A -->
 
@@ -43,7 +43,7 @@ assignees: cremenescu
 ## Crash report
 
 <!-- If the app crashed, attach the .ips report from
-     ~/Library/Logs/DiagnosticReports/mRemoteNXT_*.ips -->
+     ~/Library/Logs/DiagnosticReports/AlmacRemote_*.ips -->
 
 ## Anything else
 

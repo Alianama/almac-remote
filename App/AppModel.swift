@@ -1,14 +1,23 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// mRemoteNXT — Copyright (c) 2026 Razvan Cremenescu
+// Almac Remote — based on mRemoteNXT, Copyright (c) 2026 Razvan Cremenescu
 // See LICENSE for full text.
 
 import SwiftUI
 import AppKit
 import MRNGCore
+import LocalAuthentication
 
 /// An open session backed by a tab.
 struct Session: Identifiable {
     enum Kind { case ssh, telnet, http, externalApp, rdp, sftp, externalTool, unsupported }
+    /// Whether this session needs to tunnel through an SSH jump host before the
+    /// real protocol connection can start, and how that's going.
+    enum ProxyState: Equatable {
+        case none                  // no ProxyJump configured — connect directly
+        case connecting            // tunnel process starting / port not ready yet
+        case ready(Int)            // tunnel up — connect to 127.0.0.1:<port> instead
+        case failed(String)
+    }
     let id = UUID()
     var title: String
     let kind: Kind
@@ -16,6 +25,7 @@ struct Session: Identifiable {
     let password: String
     let panel: String
     var command: String? = nil // for .externalTool: the resolved command line
+    var proxyState: ProxyState = .none
 }
 
 /// External tool: a command line with macros (%Host%, %Username%, %Port%, %Password%, %Domain%, %Name%).
@@ -53,6 +63,9 @@ final class AppModel: ObservableObject {
     @Published var loadError: String?
     @Published var fileURL: URL?
     @Published var selectedNodeID: String?
+    /// Node whose sidebar row should show an inline rename text field right
+    /// now — set when a new folder/connection is created, like Finder.
+    @Published var renamingNodeID: String?
     @Published var searchText: String = ""
     @Published var sessions: [Session] = [] {
         didSet { persistSessionState() }
@@ -109,9 +122,11 @@ final class AppModel: ObservableObject {
     @Published var updateTabTitleFromTerminal: Bool = true {
         didSet { UserDefaults.standard.set(updateTabTitleFromTerminal, forKey: "updateTabTitleFromTerminal") }
     }
-    @Published var editorVisible: Bool = false {
-        didSet { UserDefaults.standard.set(editorVisible, forKey: "editorVisible") }
-    }
+    // Not persisted: the editor sheet is tied to a live `selectedNodeID`, which
+    // isn't itself restored across launches — persisting this flag alone left
+    // the app launching into an empty, input-blocking sheet (isPresented=true,
+    // no node to show). Always start closed.
+    @Published var editorVisible: Bool = false
     @Published var closeTabOnDisconnect: Bool = false {
         didSet { UserDefaults.standard.set(closeTabOnDisconnect, forKey: "closeTabOnDisconnect") }
     }
@@ -120,7 +135,7 @@ final class AppModel: ObservableObject {
     @Published var restoreSessions: Bool = true {
         didSet { UserDefaults.standard.set(restoreSessions, forKey: "restoreSessions") }
     }
-    /// When on, FreeRDP writes a DEBUG log to ~/Library/Logs/mRemoteNXT/mRemoteNXT.log
+    /// When on, FreeRDP writes a DEBUG log to ~/Library/Logs/AlmacRemote/AlmacRemote.log
     /// so RDP connection failures can be diagnosed. Off by default (verbose).
     @Published var diagnosticLogging: Bool = false {
         didSet {
@@ -131,11 +146,93 @@ final class AppModel: ObservableObject {
     @Published var externalTools: [ExternalTool] = [] {
         didSet { saveTools() }
     }
+    /// User-created terminal themes (start from a Ghostty-sourced built-in,
+    /// tweak colors, save as new) — a name here shadows a built-in of the same name.
+    @Published var customThemes: [String: TerminalTheme] = [:] {
+        didSet {
+            TerminalThemes.custom = customThemes
+            saveCustomThemes()
+        }
+    }
+
+    /// Auto-lock the app after `idleLockMinutes` of no keyboard/mouse activity
+    /// in this app (including time spent away in another app), requiring
+    /// Touch ID / the Mac password to get back in. Off by default.
+    @Published var lockEnabled: Bool = false {
+        didSet {
+            UserDefaults.standard.set(lockEnabled, forKey: "lockEnabled")
+            startIdleMonitoring()
+        }
+    }
+    @Published var idleLockMinutes: Double = 5 {
+        didSet { UserDefaults.standard.set(idleLockMinutes, forKey: "idleLockMinutes") }
+    }
+    @Published var isLocked: Bool = false
+    @Published var lockAuthError: String?
+    private var idleCheckTimer: Timer?
+    private var localActivityMonitor: Any?
+    private var lastActivityDate = Date()
+
+    func lockNow() {
+        guard lockEnabled, !isLocked else { return }
+        isLocked = true
+        lockAuthError = nil
+        // Prompting while the app isn't frontmost (e.g. the lock fired while
+        // the user was away in another app) can't present properly and just
+        // spawns a broken, repeating Touch ID sheet — wait for
+        // didBecomeActiveNotification instead in that case.
+        if NSApp.isActive { authenticateToUnlock() }
+    }
+
+    /// Prompts Touch ID with fallback to the Mac account password — the OS
+    /// handles both, we just ask for "device owner authentication".
+    func authenticateToUnlock() {
+        let context = LAContext()
+        var error: NSError?
+        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
+            lockAuthError = error?.localizedDescription
+            return
+        }
+        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: t("Security.UnlockReason")) { [weak self] success, evalError in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if success {
+                    self.isLocked = false
+                    self.lockAuthError = nil
+                    self.lastActivityDate = Date()
+                } else {
+                    self.lockAuthError = evalError?.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func startIdleMonitoring() {
+        idleCheckTimer?.invalidate()
+        idleCheckTimer = nil
+        if let m = localActivityMonitor { NSEvent.removeMonitor(m) }
+        localActivityMonitor = nil
+        guard lockEnabled else { return }
+        lastActivityDate = Date()
+        // Local monitor only sees events delivered to this app — no
+        // Accessibility/Input Monitoring permission required, unlike a
+        // system-wide idle read.
+        localActivityMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown, .rightMouseDown, .scrollWheel]) { [weak self] event in
+            self?.lastActivityDate = Date()
+            return event
+        }
+        idleCheckTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            guard let self, self.lockEnabled, !self.isLocked else { return }
+            if Date().timeIntervalSince(self.lastActivityDate) >= self.idleLockMinutes * 60 {
+                self.lockNow()
+            }
+        }
+    }
 
     /// Directory where diagnostic logs are written.
     static var logDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/mRemoteNXT", isDirectory: true)
+            .appendingPathComponent("Library/Logs/AlmacRemote", isDirectory: true)
     }
 
     static func applyDiagnosticLogging(_ on: Bool) {
@@ -158,17 +255,36 @@ final class AppModel: ObservableObject {
         if let v = UserDefaults.standard.string(forKey: "cursorBlinkSpeed"),
            let s = CursorBlinkSpeed(rawValue: v) { cursorBlinkSpeed = s }
         if let v = UserDefaults.standard.object(forKey: "updateTabTitleFromTerminal") as? Bool { updateTabTitleFromTerminal = v }
-        if let v = UserDefaults.standard.object(forKey: "editorVisible") as? Bool { editorVisible = v }
         if let v = UserDefaults.standard.object(forKey: "closeTabOnDisconnect") as? Bool { closeTabOnDisconnect = v }
         if let v = UserDefaults.standard.object(forKey: "restoreSessions") as? Bool { restoreSessions = v }
         if let v = UserDefaults.standard.object(forKey: "diagnosticLogging") as? Bool { diagnosticLogging = v }
+        if let v = UserDefaults.standard.object(forKey: "lockEnabled") as? Bool { lockEnabled = v }
+        if let v = UserDefaults.standard.object(forKey: "idleLockMinutes") as? Double { idleLockMinutes = v }
         AppModel.applyDiagnosticLogging(diagnosticLogging)
+        startIdleMonitoring()
         loadTools()
+        loadCustomThemes()
         // Auto-reopen the last file used (if it still exists on disk).
         if let saved = UserDefaults.standard.string(forKey: "lastOpenedFile"),
            FileManager.default.fileExists(atPath: saved) {
             load(url: URL(fileURLWithPath: saved))
             restoreOpenSessions()
+        }
+        // Flush any pending debounced auto-save before the app quits.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self, self.dirty else { return }
+            self.autoSaveWorkItem?.cancel()
+            self.save()
+        }
+        // If idle-lock fired while the app was in the background, the Touch
+        // ID sheet couldn't present — ask now that the app is frontmost again.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self, self.isLocked else { return }
+            self.authenticateToUnlock()
         }
     }
 
@@ -227,6 +343,9 @@ final class AppModel: ObservableObject {
     /// Close the current document and return to the empty state.
     /// Disconnects all sessions; the next launch will not auto-reopen anything.
     func closeDocument() {
+        // Flush any pending auto-save before tearing the document down.
+        autoSaveWorkItem?.cancel()
+        if dirty { save() }
         // Stop all open sessions (RDP threads, terminal subprocesses, etc.).
         for s in sessions { closeSession(s.id) }
         sessions.removeAll()
@@ -270,6 +389,15 @@ final class AppModel: ObservableObject {
         return doc.allNodes().first { $0.id == id }
     }
 
+    /// Node shown in the bottom status bar: the currently open session tab's
+    /// connection when one is active, else the sidebar tree selection.
+    var statusBarNode: MRNGNode? {
+        if let sid = selectedSessionID, let session = sessions.first(where: { $0.id == sid }) {
+            return session.node
+        }
+        return node(byID: selectedNodeID)
+    }
+
     func decryptedPassword(for node: MRNGNode) -> String {
         let enc = node.encryptedPassword
         guard !enc.isEmpty, let doc else { return "" }
@@ -281,9 +409,45 @@ final class AppModel: ObservableObject {
         return MRNGCrypto.encrypt(plaintext: plaintext, password: masterPassword, iterations: doc.kdfIterations)
     }
 
+    /// Decrypted Base32 TOTP secret for a connection, or "" if 2FA isn't set up.
+    func decryptedTOTPSecret(for node: MRNGNode) -> String {
+        let enc = node.encryptedTOTPSecret
+        guard !enc.isEmpty, let doc else { return "" }
+        return MRNGCrypto.decrypt(base64: enc, password: masterPassword, iterations: doc.kdfIterations) ?? ""
+    }
+
+    /// Current 6-digit TOTP code for a connection, or nil if 2FA isn't set up
+    /// or the stored secret isn't valid Base32.
+    func totpCode(for node: MRNGNode, date: Date = Date()) -> String? {
+        let secret = decryptedTOTPSecret(for: node)
+        guard !secret.isEmpty else { return nil }
+        return TOTP.code(secretBase32: secret, date: date)
+    }
+
+    /// Decrypted password for this connection's SSH jump host (ProxyJump), or "".
+    func decryptedProxyJumpPassword(for node: MRNGNode) -> String {
+        let enc = node.encryptedProxyJumpPassword
+        guard !enc.isEmpty, let doc else { return "" }
+        return MRNGCrypto.decrypt(base64: enc, password: masterPassword, iterations: doc.kdfIterations) ?? ""
+    }
+
     // MARK: - Editing / saving
 
-    func markDirty() { dirty = true; treeVersion &+= 1 }
+    private var autoSaveWorkItem: DispatchWorkItem?
+
+    /// Cancels a pending debounced auto-save, e.g. right before saving synchronously.
+    func cancelPendingAutoSave() { autoSaveWorkItem?.cancel() }
+
+    func markDirty() {
+        dirty = true
+        treeVersion &+= 1
+        // Auto-save shortly after edits stop, so rapid keystrokes in the
+        // editor coalesce into one write instead of one per character.
+        autoSaveWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in self?.save() }
+        autoSaveWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: item)
+    }
 
     /// Container into which new nodes are inserted, derived from the current selection.
     private func targetContainer() -> MRNGNode? {
@@ -346,6 +510,7 @@ final class AppModel: ObservableObject {
             doc?.roots.append(node) // new root node
         }
         selectedNodeID = node.id
+        renamingNodeID = node.id
         markDirty()
     }
 
@@ -473,18 +638,61 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func connect(_ node: MRNGNode) {
-        guard !node.isContainer else { return }
-        let session = Session(
+    /// Background SSH jump-host tunnels, one per session that needs one, keyed
+    /// by session id so `closeSession` can tear the right one down.
+    private var tunnels: [UUID: SSHTunnel] = [:]
+
+    private func makeSession(for node: MRNGNode) -> Session {
+        var session = Session(
             title: node.name,
             kind: kind(for: node),
             node: node,
             password: decryptedPassword(for: node),
             panel: node.panel.isEmpty ? "General" : node.panel
         )
+        if ProxyJumpTarget(node.proxyJump) != nil {
+            // Tunnel through the jump host first; the real RDP/SSH/Telnet/HTTP
+            // connection starts once the view sees proxyState go .ready.
+            session.proxyState = .connecting
+        }
+        return session
+    }
+
+    func connect(_ node: MRNGNode) {
+        guard !node.isContainer else { return }
+        let session = makeSession(for: node)
         sessions.append(session)
         selectedSessionID = session.id
         selectedPanel = session.panel
+        startProxyTunnel(for: session)
+    }
+
+    private func startProxyTunnel(for session: Session) {
+        guard session.proxyState == .connecting, let proxy = ProxyJumpTarget(session.node.proxyJump) else { return }
+        let node = session.node
+        let sessionID = session.id
+        let proxyPassword = decryptedProxyJumpPassword(for: node)
+        let targetHost = node.hostname
+        let targetPort = node.port
+        Task {
+            guard let tunnel = SSHTunnel(proxy: proxy, proxyPassword: proxyPassword,
+                                         targetHost: targetHost, targetPort: targetPort) else {
+                setProxyState(sessionID, .failed(t("Proxy.CouldNotStart")))
+                return
+            }
+            if await tunnel.waitUntilReady() {
+                tunnels[sessionID] = tunnel
+                setProxyState(sessionID, .ready(tunnel.localPort))
+            } else {
+                tunnel.stop()
+                setProxyState(sessionID, .failed(t("Proxy.TimedOut")))
+            }
+        }
+    }
+
+    private func setProxyState(_ id: UUID, _ state: Session.ProxyState) {
+        guard let idx = sessions.firstIndex(where: { $0.id == id }) else { return }
+        sessions[idx].proxyState = state
     }
 
     /// Distinct panels (in first-seen order) among the currently open sessions.
@@ -506,6 +714,8 @@ final class AppModel: ObservableObject {
     }
 
     func closeSession(_ id: UUID) {
+        tunnels[id]?.stop()
+        tunnels[id] = nil
         sessions.removeAll { $0.id == id }
         if selectedSessionID == id {
             // Prefer a session in the current panel; otherwise the last session.
@@ -520,11 +730,13 @@ final class AppModel: ObservableObject {
     /// recreated and the underlying process restarts.
     func reconnect(_ session: Session) {
         guard let idx = sessions.firstIndex(where: { $0.id == session.id }) else { return }
-        let fresh = Session(title: session.title, kind: session.kind, node: session.node,
-                            password: session.password, panel: session.panel)
+        tunnels[session.id]?.stop()
+        tunnels[session.id] = nil
+        let fresh = makeSession(for: session.node)
         sessions[idx] = fresh
         selectedSessionID = fresh.id
         selectedPanel = fresh.panel
+        startProxyTunnel(for: fresh)
     }
 
     func duplicate(_ session: Session) {
@@ -597,6 +809,33 @@ final class AppModel: ObservableObject {
         if let data = try? JSONEncoder().encode(externalTools) {
             UserDefaults.standard.set(data, forKey: "externalTools")
         }
+    }
+
+    // MARK: - Custom terminal themes
+
+    private func loadCustomThemes() {
+        guard let data = UserDefaults.standard.data(forKey: "customThemes"),
+              let themes = try? JSONDecoder().decode([String: TerminalTheme].self, from: data) else { return }
+        customThemes = themes
+    }
+
+    private func saveCustomThemes() {
+        if let data = try? JSONEncoder().encode(customThemes) {
+            UserDefaults.standard.set(data, forKey: "customThemes")
+        }
+    }
+
+    /// Creates or overwrites a custom theme and switches to it immediately.
+    func saveCustomTheme(name: String, _ theme: TerminalTheme) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        customThemes[trimmed] = theme
+        terminalTheme = trimmed
+    }
+
+    func deleteCustomTheme(_ name: String) {
+        customThemes[name] = nil
+        if terminalTheme == name { terminalTheme = "Implicit" }
     }
 
     func substituteMacros(_ template: String, node: MRNGNode) -> String {
@@ -744,6 +983,16 @@ final class AppModel: ObservableObject {
 
     func collapseAll() {
         expandedIDs = []
+    }
+
+    var isAllExpanded: Bool {
+        guard let doc else { return false }
+        let containerIDs = doc.allNodes().filter { $0.isContainer }.map { $0.id }
+        return !containerIDs.isEmpty && containerIDs.allSatisfy { expandedIDs.contains($0) }
+    }
+
+    func toggleExpandCollapseAll() {
+        if isAllExpanded { collapseAll() } else { expandAll() }
     }
 
     private func expandedKey() -> String? {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// mRemoteNXT — Copyright (c) 2026 Razvan Cremenescu
+// Almac Remote — based on mRemoteNXT, Copyright (c) 2026 Razvan Cremenescu
 // See LICENSE for full text.
 
 import SwiftUI
@@ -199,34 +199,38 @@ struct ContentView: View {
     @EnvironmentObject var lang: LanguageManager
 
     var body: some View {
-        NavigationSplitView {
-            sidebar
-                .frame(minWidth: 280)
-        } detail: {
-            detail
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                Button { model.addConnection() } label: { Image(systemName: "plus.rectangle") }
-                    .help(t("Toolbar.NewConnection"))
-                Button { model.addFolder() } label: { Image(systemName: "folder.badge.plus") }
-                    .help(t("Toolbar.NewFolder"))
-                Button { model.save() } label: {
-                    Image(systemName: model.dirty ? "square.and.arrow.down.fill" : "square.and.arrow.down")
-                }.help(t("Toolbar.Save")).disabled(!model.dirty)
-                Button { model.expandAll() } label: { Image(systemName: "arrow.up.backward.and.arrow.down.forward") }
-                    .help(t("Toolbar.ExpandAll"))
-                Button { model.collapseAll() } label: { Image(systemName: "arrow.down.forward.and.arrow.up.backward") }
-                    .help(t("Toolbar.CollapseAll"))
-                Button { model.sortAlphabetical() } label: { Image(systemName: "arrow.up.arrow.down") }
-                    .help(t("Toolbar.SortAlphabetical"))
-                Button { if model.selectedNodeID != nil { model.editorVisible = true } } label: {
-                    Image(systemName: "slider.horizontal.3")
-                }.help(t("Toolbar.EditSelected"))
-                .disabled(model.selectedNodeID == nil)
+        ZStack {
+            NavigationSplitView {
+                sidebar
+                    .frame(minWidth: 280)
+            } detail: {
+                detail
             }
-            ToolbarItem(placement: .principal) {
-                if !model.sessions.isEmpty { PanelTabBar() }
+            .toolbar {
+                ToolbarItemGroup(placement: .navigation) {
+                    Button { model.addConnection() } label: { Image(systemName: "plus.rectangle") }
+                        .help(t("Toolbar.NewConnection"))
+                    Button { model.addFolder() } label: { Image(systemName: "folder.badge.plus") }
+                        .help(t("Toolbar.NewFolder"))
+                    Button { model.toggleExpandCollapseAll() } label: {
+                        Image(systemName: model.isAllExpanded ? "arrow.down.forward.and.arrow.up.backward" : "arrow.up.backward.and.arrow.down.forward")
+                    }
+                    .help(model.isAllExpanded ? t("Toolbar.CollapseAll") : t("Toolbar.ExpandAll"))
+                    Button { model.sortAlphabetical() } label: { Image(systemName: "arrow.up.arrow.down") }
+                        .help(t("Toolbar.SortAlphabetical"))
+                    Button { if model.selectedNodeID != nil { model.editorVisible = true } } label: {
+                        Image(systemName: "slider.horizontal.3")
+                    }.help(t("Toolbar.EditSelected"))
+                    .disabled(model.selectedNodeID == nil)
+                }
+                ToolbarItem(placement: .principal) {
+                    if !model.sessions.isEmpty { PanelTabBar() }
+                }
+            }
+            .disabled(model.isLocked)
+
+            if model.isLocked {
+                LockScreenView()
             }
         }
         .navigationTitle("")
@@ -245,6 +249,10 @@ struct ContentView: View {
         .sheet(isPresented: $model.editorVisible) {
             if let id = model.selectedNodeID {
                 EditorSheet(nodeID: id).environmentObject(model)
+            } else {
+                // No node to edit — shouldn't normally happen, but bail out
+                // rather than leaving an empty, input-blocking sheet on screen.
+                Color.clear.onAppear { model.editorVisible = false }
             }
         }
     }
@@ -550,11 +558,13 @@ struct NodeIconView: View {
 struct NodeRow: View {
     @EnvironmentObject var model: AppModel
     let node: MRNGNode
-    
+    @State private var editedName: String = ""
+    @FocusState private var nameFieldFocused: Bool
+
     private var isConnected: Bool {
         model.sessions.contains { $0.node.id == node.id }
     }
-    
+
     var body: some View {
         HStack(spacing: 6) {
             NodeIconView(node: node)
@@ -567,9 +577,25 @@ struct NodeRow: View {
                         ConnectedBadgeView()
                     }
                 }
-            Text(node.name)
-                .font(.system(size: model.uiFontSize))
-                .lineLimit(1)
+            if model.renamingNodeID == node.id {
+                TextField("", text: $editedName)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: model.uiFontSize))
+                    .focused($nameFieldFocused)
+                    .onAppear {
+                        editedName = node.name
+                        nameFieldFocused = true
+                    }
+                    .onSubmit { commitRename() }
+                    .onChange(of: nameFieldFocused) { _, focused in
+                        if !focused { commitRename() }
+                    }
+                    .onExitCommand { model.renamingNodeID = nil }
+            } else {
+                Text(node.name)
+                    .font(.system(size: model.uiFontSize))
+                    .lineLimit(1)
+            }
             if !node.isContainer && model.showProtocol {
                 Spacer(minLength: 4)
                 Text(node.protocolType)
@@ -577,6 +603,16 @@ struct NodeRow: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func commitRename() {
+        guard model.renamingNodeID == node.id else { return }
+        let trimmed = editedName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            node.attributes["Name"] = trimmed
+            model.markDirty()
+        }
+        model.renamingNodeID = nil
     }
 }
 

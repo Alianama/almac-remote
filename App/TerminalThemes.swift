@@ -1,43 +1,47 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// mRemoteNXT — Copyright (c) 2026 Razvan Cremenescu
+// Almac Remote — based on mRemoteNXT, Copyright (c) 2026 Razvan Cremenescu
 // See LICENSE for full text.
 
 import AppKit
 import SwiftTerm
 
-struct TerminalTheme {
-    let background: String   // hex "RRGGBB"
-    let foreground: String
-    let cursor: String
-    let ansi: [String]       // 16 ANSI colors
+/// A terminal color scheme: 16 ANSI colors + background/foreground/cursor.
+/// `isLight` groups it in the picker; it plays no role in rendering.
+struct TerminalTheme: Codable, Equatable {
+    var background: String   // hex "RRGGBB"
+    var foreground: String
+    var cursor: String
+    var ansi: [String]       // 16 ANSI colors
+    var isLight: Bool = false
 }
 
 enum TerminalThemes {
-    /// "Implicit" (Default) = SwiftTerm's stock theme; we don't override it.
-    static let names = ["Implicit", "macOS Light", "Solarized Dark", "Dracula", "Nord", "Solarized Light"]
+    /// Built-in catalog, ported from Ghostty's bundled themes
+    /// (https://github.com/ghostty-org/ghostty, themes sourced from
+    /// https://github.com/mbadolato/iTerm2-Color-Schemes).
+    static let all: [String: TerminalTheme] = loadBundled()
 
-    static let all: [String: TerminalTheme] = [
-        "macOS Light": TerminalTheme(
-            background: "f2f2f2", foreground: "000000", cursor: "000000",
-            ansi: ["000000", "990000", "00a600", "999900", "0000b2", "b200b2", "00a6b2", "bfbfbf",
-                   "666666", "e50000", "00d900", "e5e500", "0000ff", "e500e5", "00e5e5", "e5e5e5"]),
-        "Solarized Dark": TerminalTheme(
-            background: "002b36", foreground: "839496", cursor: "93a1a1",
-            ansi: ["073642", "dc322f", "859900", "b58900", "268bd2", "d33682", "2aa198", "eee8d5",
-                   "002b36", "cb4b16", "586e75", "657b83", "839496", "6c71c4", "93a1a1", "fdf6e3"]),
-        "Dracula": TerminalTheme(
-            background: "282a36", foreground: "f8f8f2", cursor: "f8f8f2",
-            ansi: ["21222c", "ff5555", "50fa7b", "f1fa8c", "bd93f9", "ff79c6", "8be9fd", "f8f8f2",
-                   "6272a4", "ff6e6e", "69ff94", "ffffa5", "d6acff", "ff92df", "a4ffff", "ffffff"]),
-        "Nord": TerminalTheme(
-            background: "2e3440", foreground: "d8dee9", cursor: "d8dee9",
-            ansi: ["3b4252", "bf616a", "a3be8c", "ebcb8b", "81a1c1", "b48ead", "88c0d0", "e5e9f0",
-                   "4c566a", "bf616a", "a3be8c", "ebcb8b", "81a1c1", "b48ead", "8fbcbb", "eceff4"]),
-        "Solarized Light": TerminalTheme(
-            background: "fdf6e3", foreground: "657b83", cursor: "586e75",
-            ansi: ["073642", "dc322f", "859900", "b58900", "268bd2", "d33682", "2aa198", "eee8d5",
-                   "002b36", "cb4b16", "586e75", "657b83", "839496", "6c71c4", "93a1a1", "fdf6e3"]),
-    ]
+    /// User-created themes (start from a built-in, tweak, save as new).
+    /// Set once by `AppModel` from its persisted `customThemes`.
+    static var custom: [String: TerminalTheme] = [:]
+
+    /// "Implicit" (Default) = SwiftTerm's stock theme, always first.
+    static var names: [String] {
+        ["Implicit"] + Set(all.keys).union(custom.keys).sorted()
+    }
+
+    /// Custom overrides a built-in of the same name.
+    static func theme(named name: String) -> TerminalTheme? {
+        custom[name] ?? all[name]
+    }
+
+    private static func loadBundled() -> [String: TerminalTheme] {
+        guard let url = Bundle.main.url(forResource: "GhosttyThemes", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let decoded = try? JSONDecoder().decode([String: TerminalTheme].self, from: data)
+        else { return [:] }
+        return decoded
+    }
 
     // SwiftTerm's default ANSI palette (for restoring the "Implicit" theme).
     private static let defaultPalette = [
@@ -57,7 +61,7 @@ enum TerminalThemes {
             defaultCaret = term.caretColor
         }
 
-        if name == "Implicit" || all[name] == nil {
+        guard name != "Implicit", let theme = theme(named: name) else {
             term.installColors(defaultPalette.map(swiftTermColor))
             if let bg = defaultBg { term.nativeBackgroundColor = bg }
             if let fg = defaultFg { term.nativeForegroundColor = fg }
@@ -66,7 +70,6 @@ enum TerminalThemes {
             return
         }
 
-        let theme = all[name]!
         if theme.ansi.count == 16 {
             term.installColors(theme.ansi.map(swiftTermColor))
         }
@@ -82,13 +85,22 @@ enum TerminalThemes {
         return (UInt8((v >> 16) & 0xff), UInt8((v >> 8) & 0xff), UInt8(v & 0xff))
     }
 
-    private static func swiftTermColor(_ hex: String) -> SwiftTerm.Color {
+    static func swiftTermColor(_ hex: String) -> SwiftTerm.Color {
         let (r, g, b) = bytes(hex)
         return SwiftTerm.Color(red: UInt16(r) * 257, green: UInt16(g) * 257, blue: UInt16(b) * 257)
     }
 
-    private static func nsColor(_ hex: String) -> NSColor {
+    static func nsColor(_ hex: String) -> NSColor {
         let (r, g, b) = bytes(hex)
         return NSColor(srgbRed: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1)
+    }
+
+    /// Inverse of `nsColor(_:)`, for saving a `ColorPicker`-chosen color back to hex.
+    static func hex(_ color: NSColor) -> String {
+        let c = color.usingColorSpace(.sRGB) ?? color
+        let r = UInt8((c.redComponent * 255).rounded())
+        let g = UInt8((c.greenComponent * 255).rounded())
+        let b = UInt8((c.blueComponent * 255).rounded())
+        return String(format: "%02x%02x%02x", r, g, b)
     }
 }

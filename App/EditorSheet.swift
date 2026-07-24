@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// mRemoteNXT — Copyright (c) 2026 Razvan Cremenescu
+// Almac Remote — based on mRemoteNXT, Copyright (c) 2026 Razvan Cremenescu
 // See LICENSE for full text.
 
 import SwiftUI
@@ -40,7 +40,8 @@ struct EditorSheet: View {
     @State private var snapshot: [String: String] = [:]
     @State private var passwordPlain: String = ""
     @State private var originalPasswordPlain: String = ""
-    @State private var dirtyAtOpen: Bool = false
+    @State private var totpSecretPlain: String = ""
+    @State private var proxyPasswordPlain: String = ""
 
     private let protocols = ["RDP", "SSH2", "SSH1", "Telnet", "VNC", "HTTP", "HTTPS", "IntApp"]
 
@@ -172,6 +173,32 @@ struct EditorSheet: View {
         }
         field(t("Editor.Field.Host"), attr(node, "Hostname"))
         field(t("Editor.Field.Panel"), attr(node, "Panel", inherit: "InheritPanel"))
+        Divider().padding(.vertical, 4)
+        field(t("Editor.Field.ProxyJump"), attr(node, "ProxyJump", inherit: "InheritProxyJump"))
+        HStack {
+            label(t("Editor.Field.ProxyJumpPassword"))
+            SecureField("", text: $proxyPasswordPlain)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 320)
+                .onChange(of: proxyPasswordPlain) { _, newValue in
+                    node.attributes["ProxyJumpPassword"] = newValue.isEmpty ? "" : model.encrypt(newValue)
+                    node.attributes["InheritProxyJump"] = "false"
+                    model.markDirty()
+                }
+            Spacer()
+        }
+        Text(t("Editor.ProxyJumpHint"))
+            .font(.caption2).foregroundStyle(.secondary)
+        if node.protocolType == "SSH1" || node.protocolType == "SSH2" {
+            Divider().padding(.vertical, 4)
+            Text(t("Editor.Field.SSHLocalForwards")).font(.callout).foregroundStyle(.secondary)
+            TextEditor(text: attr(node, "SSHLocalForwards"))
+                .font(.system(.callout, design: .monospaced))
+                .frame(height: 70)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+            Text(t("Editor.SSHLocalForwardsHint"))
+                .font(.caption2).foregroundStyle(.secondary)
+        }
     }
 
     @ViewBuilder private func credentialsSection(_ node: MRNGNode) -> some View {
@@ -195,6 +222,30 @@ struct EditorSheet: View {
             .buttonStyle(.borderless)
             .help(t("Editor.CopyPassword"))
             .disabled(passwordPlain.isEmpty)
+            Spacer()
+        }
+        HStack {
+            label(t("Editor.Field.TOTPSecret"))
+            SecureField(t("Editor.TOTPSecretPlaceholder"), text: $totpSecretPlain)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 320)
+                .onChange(of: totpSecretPlain) { _, newValue in
+                    node.attributes["TOTPSecret"] = newValue.isEmpty ? "" : model.encrypt(newValue)
+                    model.markDirty()
+                }
+            if !totpSecretPlain.isEmpty {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    if let code = TOTP.code(secretBase32: totpSecretPlain, date: context.date) {
+                        Text(code)
+                            .font(.system(.callout, design: .monospaced)).bold()
+                        Text("\(TOTP.secondsRemaining(date: context.date))s")
+                            .font(.caption).foregroundStyle(.secondary).frame(width: 24)
+                    } else {
+                        Text(t("Editor.TOTPInvalidSecret"))
+                            .font(.caption).foregroundStyle(.red)
+                    }
+                }
+            }
             Spacer()
         }
     }
@@ -258,26 +309,27 @@ struct EditorSheet: View {
         snapshot = node.attributes
         passwordPlain = model.decryptedPassword(for: node)
         originalPasswordPlain = passwordPlain
-        dirtyAtOpen = model.dirty
+        totpSecretPlain = model.decryptedTOTPSecret(for: node)
+        proxyPasswordPlain = model.decryptedProxyJumpPassword(for: node)
     }
 
     private func discard() {
         if let node {
             node.attributes = snapshot
-            // Don't forcibly clear dirty if the doc was already dirty before we opened.
-            if !dirtyAtOpen {
-                // If we entered clean, restoring also restores the clean flag.
-                model.dirty = false
-            } else {
-                model.dirty = true
-            }
             model.treeVersion &+= 1
+            // A debounced auto-save may have already written the now-discarded
+            // edits to disk — cancel it and force a fresh save of the reverted state.
+            model.cancelPendingAutoSave()
+            model.save()
         }
         model.editorVisible = false
     }
 
     private func apply() {
-        // Changes are already in node.attributes (live binding); we just close.
+        // Changes are already in node.attributes (live binding) — save now
+        // instead of waiting for the debounced auto-save to catch up.
+        model.cancelPendingAutoSave()
+        model.save()
         model.editorVisible = false
     }
 
@@ -327,7 +379,7 @@ struct ConnectionStatusBar: View {
     }
 
     @ViewBuilder private var content: some View {
-        if let node = model.node(byID: model.selectedNodeID), !node.isContainer {
+        if let node = model.statusBarNode, !node.isContainer {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     NodeIconView(node: node).frame(width: 14, height: 14)
@@ -340,8 +392,14 @@ struct ConnectionStatusBar: View {
                 row(icon: "network", label: t("StatusBar.Host"), value: node.hostname, display: hostString(node))
                 row(icon: "person", label: t("StatusBar.User"), value: node.username)
                 row(icon: "key", label: t("StatusBar.Pass"), value: model.decryptedPassword(for: node), masked: !model.showPasswordPlain)
+                if !node.encryptedTOTPSecret.isEmpty {
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        let code = model.totpCode(for: node, date: context.date) ?? ""
+                        row(icon: "lock.rotation", label: t("StatusBar.TOTP"), value: code)
+                    }
+                }
             }
-        } else if let node = model.node(byID: model.selectedNodeID), node.isContainer {
+        } else if let node = model.statusBarNode, node.isContainer {
             HStack(spacing: 6) {
                 Image(systemName: "folder.fill").foregroundStyle(Color.accentColor)
                 Text(node.name).lineLimit(1)

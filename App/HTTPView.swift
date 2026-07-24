@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// mRemoteNXT — Copyright (c) 2026 Razvan Cremenescu
+// Almac Remote — based on mRemoteNXT, Copyright (c) 2026 Razvan Cremenescu
 // See LICENSE for full text.
 
 import SwiftUI
@@ -12,6 +12,9 @@ import MRNGCore
 final class HTTPSWebView: WKWebView, WKNavigationDelegate {
     var autofillUser: String = ""
     var autofillPass: String = ""
+    /// Set once we've called `load`/`loadHTMLString` — lets `HTTPContainer`
+    /// defer loading while a proxy tunnel is still connecting.
+    var didLoad = false
 
     func webView(_ webView: WKWebView,
                  didReceive challenge: URLAuthenticationChallenge,
@@ -158,25 +161,46 @@ struct HTTPContainer: NSViewRepresentable {
         webView.autofillUser = session.node.username
         webView.autofillPass = session.password
         webView.navigationDelegate = webView
-        if let url = Self.url(for: session.node) {
+        loadIfReady(webView)
+        return webView
+    }
+
+    /// Loads the real URL (or shows the proxy error), unless we're still
+    /// waiting on a tunnel (`.connecting`) — `updateNSView` retries once ready.
+    private func loadIfReady(_ webView: HTTPSWebView) {
+        guard !webView.didLoad, session.proxyState != .connecting else { return }
+        webView.didLoad = true
+        if case .failed(let message) = session.proxyState {
+            webView.loadHTMLString(
+                "<html><body style=\"font: -apple-system-body; padding:2em;\">\(message)</body></html>",
+                baseURL: nil)
+            return
+        }
+        if let url = Self.url(for: session) {
             webView.load(URLRequest(url: url))
         }
-        return webView
     }
 
     func updateNSView(_ nsView: HTTPSWebView, context: Context) {
         // Pick up credentials if they changed in the editor while the tab was open.
         nsView.autofillUser = session.node.username
         nsView.autofillPass = session.password
+        loadIfReady(nsView)
     }
 
-    static func url(for node: MRNGNode) -> URL? {
+    static func url(for session: Session) -> URL? {
+        let node = session.node
         let scheme = node.protocolType.lowercased() // "http" or "https"
-        let host = node.hostname
+        var host = node.hostname
+        var port = node.port
+        if case .ready(let localPort) = session.proxyState {
+            host = "127.0.0.1"
+            port = localPort
+        }
         guard !host.isEmpty else { return nil }
         let defaultPort = (scheme == "https") ? 443 : 80
         var s = "\(scheme)://\(host)"
-        if node.port != defaultPort { s += ":\(node.port)" }
+        if port != defaultPort { s += ":\(port)" }
         return URL(string: s)
     }
 }

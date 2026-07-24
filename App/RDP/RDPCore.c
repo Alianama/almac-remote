@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * mRemoteNXT — Copyright (c) 2026 Razvan Cremenescu
+ * Almac Remote — based on mRemoteNXT, Copyright (c) 2026 Razvan Cremenescu
  * See LICENSE for full text.
  */
 
@@ -65,7 +65,7 @@ void rdpcore_set_diagnostic_logging(int enabled, const char *dir) {
         WLog_SetLogAppenderType(root, WLOG_APPENDER_FILE);
         wLogAppender *appender = WLog_GetLogAppender(root);
         if (appender) {
-            WLog_ConfigureAppender(appender, "outputfilename", (void *)"mRemoteNXT.log");
+            WLog_ConfigureAppender(appender, "outputfilename", (void *)"AlmacRemote.log");
             WLog_ConfigureAppender(appender, "outputfilepath", (void *)(uintptr_t)dir);
         }
         WLog_OpenAppender(root);

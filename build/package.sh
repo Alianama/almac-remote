@@ -1,13 +1,13 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-2.0-or-later
-# mRemoteNXT — Copyright (c) 2026 Razvan Cremenescu
+# Almac Remote — based on mRemoteNXT, Copyright (c) 2026 Razvan Cremenescu
 #
 # Builds a self-contained .app + .dmg for distribution.
 #
 # Steps:
-#  1. xcodebuild Release -> mRemoteNXT.app linked to /opt/homebrew/... dylibs
+#  1. xcodebuild Release -> AlmacRemote.app linked to /opt/homebrew/... dylibs
 #  2. Recursively copy every /opt/homebrew/... and /usr/local/... dylib into
-#     mRemoteNXT.app/Contents/Frameworks/, rewriting install names with
+#     AlmacRemote.app/Contents/Frameworks/, rewriting install names with
 #     install_name_tool so the bundle has no external Homebrew dependency.
 #  3. Sign every bundled dylib AND the main app with Developer ID + hardened
 #     runtime + secure timestamp + entitlements. Falls back to ad-hoc signing
@@ -19,8 +19,8 @@
 # Usage: ./build/package.sh [version]
 #   version defaults to v0.1.0-alpha
 #
-# Notarization requires a stored keychain profile named "mRemoteNXT-notary":
-#   xcrun notarytool store-credentials mRemoteNXT-notary \
+# Notarization requires a stored keychain profile named "AlmacRemote-notary":
+#   xcrun notarytool store-credentials AlmacRemote-notary \
 #       --apple-id <your-apple-id> --team-id FU62DHV366 --password <app-pwd>
 
 set -euo pipefail
@@ -29,13 +29,13 @@ VERSION="${1:-v0.1.0-alpha}"
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/.build-release"
 DIST_DIR="$PROJECT_ROOT/.dist"
-APP_NAME="mRemoteNXT"
+APP_NAME="AlmacRemote"
 DMG_NAME="${APP_NAME}-${VERSION}.dmg"
 ENTITLEMENTS="$PROJECT_ROOT/build/entitlements.plist"
 
 # Developer ID signing config. Set DEVELOPER_ID="-" via env to force ad-hoc.
 DEVELOPER_ID="${DEVELOPER_ID:-Developer ID Application: Vtun Hardware SRL (FU62DHV366)}"
-NOTARY_PROFILE="${NOTARY_PROFILE:-mRemoteNXT-notary}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-AlmacRemote-notary}"
 
 # Detect whether the Developer ID cert is actually present. If not, fall back
 # to ad-hoc signing and skip notarization (useful for local builds).
@@ -263,10 +263,10 @@ ln -s /Applications "$DMG_STAGE/Applications"
 
 if [ "$SIGN_MODE" = "developer-id" ]; then
     cat > "$DMG_STAGE/INSTALL.txt" <<EOF
-mRemoteNXT — install
+Almac Remote — install
 
-1. Drag mRemoteNXT.app into the Applications folder shortcut.
-2. Open mRemoteNXT.app from /Applications.
+1. Drag AlmacRemote.app into the Applications folder shortcut.
+2. Open AlmacRemote.app from /Applications.
 
 The app is signed and notarized by Apple — no Gatekeeper warning.
 
@@ -275,15 +275,15 @@ License: GPL-2.0-or-later
 EOF
 else
     cat > "$DMG_STAGE/INSTALL.txt" <<EOF
-mRemoteNXT — install
+Almac Remote — install
 
-1. Drag mRemoteNXT.app into the Applications folder shortcut.
+1. Drag AlmacRemote.app into the Applications folder shortcut.
 2. The first launch shows a Gatekeeper warning because the app is
    ad-hoc signed (no paid Apple Developer ID). To clear it, run once:
 
-       xattr -dr com.apple.quarantine /Applications/mRemoteNXT.app
+       xattr -dr com.apple.quarantine /Applications/AlmacRemote.app
 
-3. Open mRemoteNXT.app from /Applications.
+3. Open AlmacRemote.app from /Applications.
 
 Sources: https://github.com/cremenescu/mRemoteNXT
 License: GPL-2.0-or-later

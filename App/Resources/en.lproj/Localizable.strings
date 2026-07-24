@@ -4,23 +4,17 @@
 /* Toolbar / menus */
 "Toolbar.NewConnection" = "New connection";
 "Toolbar.NewFolder" = "New folder";
-"Toolbar.Save" = "Save (Cmd+S)";
 "Toolbar.ExpandAll" = "Expand all";
 "Toolbar.CollapseAll" = "Collapse all";
 "Toolbar.SortAlphabetical" = "Sort alphabetically (connections, then folders)";
 "Toolbar.EditSelected" = "Edit selected connection...";
 
 /* Menus */
-"Menu.About" = "About mRemoteNXT";
-"Menu.CheckForUpdates" = "Check for Updates…";
-"Menu.HelpWindow" = "mRemoteNXT Help";
-"Menu.ViewOnGitHub" = "View Source on GitHub";
-"Menu.ReportIssue" = "Report an Issue...";
-"Menu.EmailAuthor" = "Email the Author";
+"Menu.About" = "About Almac Remote";
+"Menu.HelpWindow" = "Almac Remote Help";
 "Menu.NewFile" = "New configuration...";
 "Menu.OpenFile" = "Open confCons.xml...";
 "Menu.CloseFile" = "Close configuration";
-"Menu.Save" = "Save";
 "NewDoc.Prompt" = "Choose where to save the new configuration.";
 "Error.SaveFailed" = "Save failed: %@";
 "Menu.ZoomIn" = "Larger terminal text";
@@ -36,12 +30,27 @@
 "Settings.UIFontSize" = "UI font size: %d";
 "Settings.TerminalFontSize" = "Terminal font size: %d";
 "Settings.TerminalTheme" = "Terminal theme";
+"Theme.PickerTitle" = "Choose Terminal Theme";
+"Theme.SearchPlaceholder" = "Search themes";
+"Theme.SectionCustom" = "Custom";
+"Theme.SectionDark" = "Dark";
+"Theme.SectionLight" = "Light";
+"Theme.Customize" = "Customize...";
+"Theme.Delete" = "Delete";
+"Theme.CustomizeTitle" = "Customize Theme";
+"Theme.NameField" = "Name";
+"Theme.Background" = "Background";
+"Theme.Foreground" = "Foreground";
+"Theme.Cursor" = "Cursor";
+"Theme.AnsiColors" = "ANSI colors";
+"Theme.Save" = "Save";
+"Common.Close" = "Close";
 "Settings.RowHeight" = "Row height: %d";
 "Settings.ShowProtocol" = "Show protocol type (RDP/SSH) in list";
 "Settings.CloseTabOnDisconnect" = "Close tab on disconnect (RDP)";
 "Settings.RestoreSessions" = "Reopen last session's connections on launch";
 "Settings.DiagnosticLogging" = "Diagnostic logging (RDP)";
-"Settings.DiagnosticLoggingNote" = "Writes to ~/Library/Logs/mRemoteNXT/mRemoteNXT.log";
+"Settings.DiagnosticLoggingNote" = "Writes to ~/Library/Logs/AlmacRemote/AlmacRemote.log";
 "Settings.RevealLog" = "Show in Finder";
 "Settings.ShowPasswordPlain" = "Show password in clear in status bar";
 "Settings.LanguagePicker" = "Interface language";
@@ -81,6 +90,7 @@
 "StatusBar.Host" = "Host";
 "StatusBar.User" = "User";
 "StatusBar.Pass" = "Pass";
+"StatusBar.TOTP" = "2FA";
 "StatusBar.Copied" = "%@ copied";
 "StatusBar.CopyHint" = "Copy %@";
 "StatusBar.Elements" = "%d items";
@@ -102,6 +112,11 @@
 "Editor.Field.Port" = "Port";
 "Editor.Field.Host" = "Host";
 "Editor.Field.Panel" = "Panel";
+"Editor.Field.ProxyJump" = "Proxy (user@host[:port])";
+"Editor.Field.ProxyJumpPassword" = "Proxy password";
+"Editor.ProxyJumpHint" = "Connect through this SSH jump host first — automatic, no separate SSH tab needed. Leave empty to connect directly. Duplicating a connection copies this too.";
+"Editor.Field.SSHLocalForwards" = "Local port forwards (SSH tunnel)";
+"Editor.SSHLocalForwardsHint" = "One per line: localPort:remoteHost:remotePort (e.g. 3389:10.54.18.110:3389). Active while this SSH tab stays open.";
 "Editor.Field.Username" = "Username";
 "Editor.Field.Domain" = "Domain";
 "Editor.Field.Password" = "Password";
@@ -109,6 +124,9 @@
 "Editor.ItemsCount" = "%d items";
 "Editor.AdvancedNote" = "Raw node attributes (read-only for now).";
 "Editor.CopyPassword" = "Copy password";
+"Editor.Field.TOTPSecret" = "2FA Secret";
+"Editor.TOTPSecretPlaceholder" = "Base32 secret (Google Authenticator)";
+"Editor.TOTPInvalidSecret" = "Invalid secret";
 
 /* Connection / save */
 "Connection.NewConnectionName" = "New connection";
@@ -132,6 +150,9 @@
 "Error.ParseFailed" = "Could not parse: %@";
 "Error.CustomMaster" = "This file uses a custom master password (not yet supported).";
 "Error.NotImplemented" = "Protocol not implemented: %@";
+"Proxy.CouldNotStart" = "Could not start the proxy tunnel (no free port or ssh failed to launch).";
+"Proxy.TimedOut" = "Proxy tunnel timed out — check the jump host, port and credentials.";
+"Proxy.Connecting" = "Connecting through proxy...";
 "Error.ExternalAppPending" = "External application (IntApp) coming soon.";
 
 /* Rename tab dialog */
@@ -142,9 +163,9 @@
 "Type.Connection" = "Connection";
 
 /* Help window */
-"Help.WindowTitle" = "mRemoteNXT Help";
+"Help.WindowTitle" = "Almac Remote Help";
 "Help.Tagline" = "Native macOS multi-protocol remote connection client";
-"Help.WhatIs.Title" = "What is mRemoteNXT?";
+"Help.WhatIs.Title" = "What is Almac Remote?";
 "Help.WhatIs.Body" = "A tabbed remote-connection manager for macOS that imports mRemoteNG's confCons.xml file as-is — including encrypted passwords, the folder tree, attribute inheritance and panels. It embeds SSH, Telnet, SFTP, RDP and HTTP/HTTPS sessions directly in tabs, so you don't need a separate terminal or RDP client open.";
 "Help.GettingStarted.Title" = "Getting started";
 "Help.GettingStarted.Body" = "On first launch the app is empty. Use File > New configuration... (Cmd+N) to create a fresh confCons.xml, or File > Open confCons.xml... (Cmd+O) to load an existing one (your own, or one exported from mRemoteNG on Windows). The next time you start the app it reopens the same file automatically. Use File > Close configuration (Cmd+Shift+W) to clear the workspace.";
@@ -153,14 +174,11 @@
 "Help.Editing.Title" = "Editing connections";
 "Help.Editing.Body" = "Right-click a connection > Edit..., or select it and press the slider icon in the toolbar. The editor is a Royal TSX-style modal with categories on the left (General / Connection / Credentials / Appearance / Advanced) and a form on the right. Click Apply to save changes, Discard to revert. A bottom status bar below the tree shows the current node's host / user / password with click-to-copy.";
 "Help.Shortcuts.Title" = "Keyboard shortcuts";
-"Help.Shortcuts.Body" = "Cmd+N — New configuration\nCmd+O — Open configuration\nCmd+Shift+W — Close configuration\nCmd+S — Save\nCmd+= / Cmd+- — Zoom terminal text\nCmd+, — Settings\nReturn — Edit selected connection\nDouble-click — Open connection in new tab";
+"Help.Shortcuts.Body" = "Cmd+N — New configuration\nCmd+O — Open configuration\nCmd+Shift+W — Close configuration\nCmd+= / Cmd+- — Zoom terminal text\nCmd+, — Settings\nReturn — Edit selected connection\nDouble-click — Open connection in new tab";
 "Help.Tips.Title" = "Tips";
-"Help.Tips.Body" = "• Drag connections and folders to reorder them. Drop a node on a folder to move it inside.\n• Use the search field in the sidebar to filter by name, host, protocol or description.\n• Panels (the tab bar at the top of the window) group connections — set the Panel attribute on a connection to put it in a different tab group.\n• Install sshpass via Homebrew (brew install hudochenkov/sshpass/sshpass) to let mRemoteNXT auto-fill SSH passwords. Without it, SSH falls back to your agent key or interactive prompt.\n• Every save creates a timestamped backup in backups/ next to your confCons.xml — you can never accidentally lose data.";
+"Help.Tips.Body" = "• Drag connections and folders to reorder them. Drop a node on a folder to move it inside.\n• Use the search field in the sidebar to filter by name, host, protocol or description.\n• Panels (the tab bar at the top of the window) group connections — set the Panel attribute on a connection to put it in a different tab group.\n• Install sshpass via Homebrew (brew install hudochenkov/sshpass/sshpass) to let Almac Remote auto-fill SSH passwords. Without it, SSH falls back to your agent key or interactive prompt.\n• Every save creates a timestamped backup in backups/ next to your confCons.xml — you can never accidentally lose data.";
 "Help.Limitations.Title" = "Known limitations";
 "Help.Limitations.Body" = "• FullFileEncryption=true (whole-XML encryption) is not yet supported.\n• Schema versions newer than 2.6 are untested.\n• RDP image-clipboard, drive / sound redirect and remote-cursor visibility are not implemented.\n• VNC and IntApp (external application launching) are planned but not implemented.";
-"Help.MoreInfo" = "More information";
-"Help.OpenIssue" = "Report a bug or request a feature";
-"Help.Email" = "Email the author: razvan@cremenescu.ro";
 
 /* Cursor blink + tab title (v0.3) */
 "Settings.CursorBlink" = "Cursor blink";
@@ -169,3 +187,16 @@
 "Blink.Slow" = "Slow";
 "Blink.Medium" = "Medium";
 "Blink.Fast" = "Fast";
+
+/* Security: idle auto-lock (Touch ID / Mac password) */
+"Security.Menu" = "Security";
+"Security.LockNow" = "Lock Now";
+"Security.LockWhenIdle" = "Lock When Idle";
+"Security.IdleTimeout" = "Lock After";
+"Security.1Minute" = "1 minute";
+"Security.5Minutes" = "5 minutes";
+"Security.15Minutes" = "15 minutes";
+"Security.30Minutes" = "30 minutes";
+"Security.Locked" = "Almac Remote is Locked";
+"Security.Unlock" = "Unlock";
+"Security.UnlockReason" = "Unlock Almac Remote";

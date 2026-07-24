@@ -1,4 +1,4 @@
-# Build mRemoteNXT from source
+# Build AlmacRemote from source
 
 > Romanian: see [BUILD.ro.md](BUILD.ro.md)
 
@@ -26,11 +26,11 @@ brew install freerdp xcodegen
 ## 2. Generate the Xcode project
 
 ```bash
-cd mRemoteNXT
+cd AlmacRemote
 xcodegen generate
 ```
 
-This produces `mRemoteNXT.xcodeproj` from `project.yml` + `Package.swift`.
+This produces `AlmacRemote.xcodeproj` from `project.yml` + `Package.swift`.
 Re-run it whenever you add or remove files in `App/`.
 
 ## 3. Build
@@ -39,19 +39,19 @@ Re-run it whenever you add or remove files in `App/`.
 
 ```bash
 xcodebuild \
-  -project mRemoteNXT.xcodeproj \
-  -scheme mRemoteNXT \
+  -project AlmacRemote.xcodeproj \
+  -scheme AlmacRemote \
   -configuration Debug \
   -derivedDataPath .build-xcode \
   build
 ```
 
-Resulting binary: `.build-xcode/Build/Products/Debug/mRemoteNXT.app`.
+Resulting binary: `.build-xcode/Build/Products/Debug/AlmacRemote.app`.
 
 ### From Xcode
 
 ```bash
-open mRemoteNXT.xcodeproj
+open AlmacRemote.xcodeproj
 ```
 
 Then Cmd+R.
@@ -59,8 +59,8 @@ Then Cmd+R.
 ## 4. Local install
 
 ```bash
-cp -R .build-xcode/Build/Products/Debug/mRemoteNXT.app /Applications/
-open /Applications/mRemoteNXT.app
+cp -R .build-xcode/Build/Products/Debug/AlmacRemote.app /Applications/
+open /Applications/AlmacRemote.app
 ```
 
 ## 5. Known build issues

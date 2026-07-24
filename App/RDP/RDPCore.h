@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later
- * mRemoteNXT — Copyright (c) 2026 Razvan Cremenescu
+ * Almac Remote — based on mRemoteNXT, Copyright (c) 2026 Razvan Cremenescu
  * See LICENSE for full text.
  */
 
@@ -47,7 +47,7 @@ void rdpcore_free(RDPCore *core);
 void rdpcore_init_crypto(const char *modules_dir);
 
 // Diagnostic logging: when enabled, routes FreeRDP's WLog output at DEBUG level
-// into <dir>/mRemoteNXT.log so connection failures can be inspected. When
+// into <dir>/AlmacRemote.log so connection failures can be inspected. When
 // disabled, raises the log level so nothing is written. Global (affects all
 // RDP sessions); safe to call before any connection.
 void rdpcore_set_diagnostic_logging(int enabled, const char *dir);

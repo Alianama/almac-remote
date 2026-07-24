@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// mRemoteNXT — Copyright (c) 2026 Razvan Cremenescu
+// Almac Remote — based on mRemoteNXT, Copyright (c) 2026 Razvan Cremenescu
 // See LICENSE for full text.
 
 import Foundation
@@ -119,6 +119,7 @@ public final class MRNGNode: Identifiable, Hashable {
             "VNCSmartSizeMode": "SmartSAspect", "VNCViewOnly": "false", "RDGatewayUsageMethod": "Never",
             "RDGatewayHostname": "", "RDGatewayUseConnectionCredentials": "Yes", "RDGatewayUsername": "",
             "RDGatewayPassword": "", "RDGatewayDomain": "",
+            "ProxyJump": "", "ProxyJumpPassword": "",
         ]
         let inheritFalse = [
             "InheritCacheBitmaps", "InheritColors", "InheritDescription", "InheritDisplayThemes",
@@ -136,7 +137,7 @@ public final class MRNGNode: Identifiable, Hashable {
             "InheritVNCProxyPassword", "InheritVNCColors", "InheritVNCSmartSizeMode", "InheritVNCViewOnly",
             "InheritRDGatewayUsageMethod", "InheritRDGatewayHostname",
             "InheritRDGatewayUseConnectionCredentials", "InheritRDGatewayUsername",
-            "InheritRDGatewayPassword", "InheritRDGatewayDomain",
+            "InheritRDGatewayPassword", "InheritRDGatewayDomain", "InheritProxyJump",
         ]
         for k in inheritFalse { a[k] = "false" }
         return a
@@ -164,6 +165,28 @@ public final class MRNGNode: Identifiable, Hashable {
     public var panel: String { resolved("Panel", inheritKey: "InheritPanel") ?? "" }
     public var expanded: Bool { attributes["Expanded"] == "true" }
     public var externalApp: String { resolved("ExtApp", inheritKey: "InheritExtApp") ?? "" }
+    /// Encrypted TOTP (2FA) secret, mRemoteNXT-extension attribute — no
+    /// inheritance, same as a per-connection Password.
+    public var encryptedTOTPSecret: String { attributes["TOTPSecret"] ?? "" }
+
+    /// SSH local port forwards (`ssh -L`), one per line as
+    /// "localPort:remoteHost:remotePort" — Almac Remote extension attribute,
+    /// applied when this connection is used as an SSH jump host.
+    public var sshLocalForwardsRaw: String { attributes["SSHLocalForwards"] ?? "" }
+    public var sshLocalForwards: [String] {
+        sshLocalForwardsRaw
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
+    }
+
+    /// SSH jump host this connection should tunnel through before connecting
+    /// (any protocol — RDP, SSH, Telnet, HTTP), as "user@host[:port]".
+    /// Almac Remote extension attribute; inheritable from a parent folder so
+    /// it can be set once for a whole group of connections.
+    public var proxyJump: String { resolved("ProxyJump", inheritKey: "InheritProxyJump") ?? "" }
+    /// Encrypted password for the jump host, same scheme as the connection Password.
+    public var encryptedProxyJumpPassword: String { resolved("ProxyJumpPassword", inheritKey: "InheritProxyJump") ?? "" }
 
     /// Default port per protocol when none is specified.
     private var defaultPort: Int {
@@ -177,6 +200,28 @@ public final class MRNGNode: Identifiable, Hashable {
         case "Rlogin": return 513
         default: return 0
         }
+    }
+}
+
+/// Parses a `ProxyJump` value ("user@host[:port]") into its parts.
+public struct ProxyJumpTarget {
+    public let user: String
+    public let host: String
+    public let port: Int
+
+    public init?(_ raw: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+        let userSplit = trimmed.split(separator: "@", maxSplits: 1)
+        let userPart = userSplit.count == 2 ? String(userSplit[0]) : ""
+        let hostPort = String(userSplit.count == 2 ? userSplit[1] : userSplit[0])
+        guard !hostPort.isEmpty else { return nil }
+        let hostSplit = hostPort.split(separator: ":", maxSplits: 1)
+        guard let hostOnly = hostSplit.first, !hostOnly.isEmpty else { return nil }
+        let port = hostSplit.count == 2 ? Int(hostSplit[1]) ?? 22 : 22
+        user = userPart
+        host = String(hostOnly)
+        self.port = port
     }
 }
 

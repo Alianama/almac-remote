@@ -1,4 +1,4 @@
-# Build mRemoteNXT din sursa
+# Build AlmacRemote din sursa
 
 > English: see [BUILD.md](BUILD.md)
 
@@ -26,11 +26,11 @@ brew install freerdp xcodegen
 ## 2. Generare proiect Xcode
 
 ```bash
-cd mRemoteNXT
+cd AlmacRemote
 xcodegen generate
 ```
 
-Asta produce `mRemoteNXT.xcodeproj` din `project.yml` + `Package.swift`.
+Asta produce `AlmacRemote.xcodeproj` din `project.yml` + `Package.swift`.
 Re-ruleaza ori de cate ori adaugi/sterge fisiere in `App/`.
 
 ## 3. Build
@@ -39,19 +39,19 @@ Re-ruleaza ori de cate ori adaugi/sterge fisiere in `App/`.
 
 ```bash
 xcodebuild \
-  -project mRemoteNXT.xcodeproj \
-  -scheme mRemoteNXT \
+  -project AlmacRemote.xcodeproj \
+  -scheme AlmacRemote \
   -configuration Debug \
   -derivedDataPath .build-xcode \
   build
 ```
 
-Binarul rezultat: `.build-xcode/Build/Products/Debug/mRemoteNXT.app`.
+Binarul rezultat: `.build-xcode/Build/Products/Debug/AlmacRemote.app`.
 
 ### Din Xcode
 
 ```bash
-open mRemoteNXT.xcodeproj
+open AlmacRemote.xcodeproj
 ```
 
 Apoi Cmd+R.
@@ -59,8 +59,8 @@ Apoi Cmd+R.
 ## 4. Instalare locala
 
 ```bash
-cp -R .build-xcode/Build/Products/Debug/mRemoteNXT.app /Applications/
-open /Applications/mRemoteNXT.app
+cp -R .build-xcode/Build/Products/Debug/AlmacRemote.app /Applications/
+open /Applications/AlmacRemote.app
 ```
 
 ## 5. Probleme cunoscute la build

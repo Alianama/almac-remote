@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// mRemoteNXT — Copyright (c) 2026 Razvan Cremenescu
+// Almac Remote — based on mRemoteNXT, Copyright (c) 2026 Razvan Cremenescu
 // See LICENSE for full text.
 
 import SwiftUI
@@ -46,6 +46,9 @@ enum CursorBlinkSpeed: String, CaseIterable, Identifiable {
 ///     stored on the SwiftUI Coordinator so that `setTerminalTitle` can flow
 ///     into the model and re-render the SessionTabBar.
 final class MRNGTerminalView: LocalProcessTerminalView {
+    /// Set once `startProcess` has actually been called — lets `TerminalContainer`
+    /// defer the spawn while a proxy tunnel is still connecting.
+    var started = false
     private var mouseUpMonitor: Any?
     private var autoScrollTimer: Timer?
     private var lastDragWindowLocation: NSPoint?
@@ -251,13 +254,21 @@ struct TerminalContainer: NSViewRepresentable {
         TerminalThemes.apply(theme, to: term)
         context.coordinator.onTitleChange = onTitleChange
         term.processDelegate = context.coordinator
-        let (exe, args) = Self.command(for: session)
-        term.startProcess(executable: exe, args: args, environment: nil, execName: nil)
+        startIfReady(term)
         // Apply blink after the child has had a moment to render the prompt.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             term.applyCursorBlinkSpeed(cursorBlinkSpeed)
         }
         return term
+    }
+
+    /// Spawns the real ssh/telnet/sftp process, unless we're still waiting on
+    /// a proxy tunnel (`.connecting`) — `updateNSView` retries once that resolves.
+    private func startIfReady(_ term: MRNGTerminalView) {
+        guard !term.started, session.proxyState != .connecting else { return }
+        term.started = true
+        let (exe, args) = Self.command(for: session)
+        term.startProcess(executable: exe, args: args, environment: nil, execName: nil)
     }
 
     func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {
@@ -269,6 +280,7 @@ struct TerminalContainer: NSViewRepresentable {
         context.coordinator.onTitleChange = onTitleChange
         if let term = nsView as? MRNGTerminalView {
             term.applyCursorBlinkSpeed(cursorBlinkSpeed)
+            startIfReady(term)
         }
         // Give the terminal first responder status when its tab becomes active.
         guard isActive else { return }
@@ -280,15 +292,28 @@ struct TerminalContainer: NSViewRepresentable {
     }
 
     static func command(for session: Session) -> (String, [String]) {
+        if case .failed(let message) = session.proxyState {
+            // Print the proxy error, then drop into a plain shell rather than
+            // leaving the tab blank — same "surface it in the terminal" approach
+            // used for real ssh/sftp failures.
+            return ("/bin/sh", ["-c", "echo \"$1\"; exec /bin/sh", "--", message])
+        }
         let node = session.node
-        let host = node.hostname
-        let port = node.port
+        var host = node.hostname
+        var port = node.port
+        if case .ready(let localPort) = session.proxyState {
+            host = "127.0.0.1"
+            port = localPort
+        }
         let user = node.username
         let target = user.isEmpty ? host : "\(user)@\(host)"
 
         switch session.kind {
         case .ssh:
-            let sshArgs = [
+            // -L localPort:remoteHost:remotePort, one flag per configured forward
+            // (jump-host tunneling — e.g. RDP or another SSH hop through this host).
+            let forwardArgs = node.sshLocalForwards.flatMap { ["-L", $0] }
+            let sshArgs = forwardArgs + [
                 "-p", "\(port)",
                 "-o", "UserKnownHostsFile=\(appKnownHostsPath())",
                 "-o", "StrictHostKeyChecking=accept-new",
@@ -328,7 +353,7 @@ struct TerminalContainer: NSViewRepresentable {
         let fm = FileManager.default
         let base = (fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
                     ?? URL(fileURLWithPath: NSHomeDirectory()))
-            .appendingPathComponent("mRemoteNXT", isDirectory: true)
+            .appendingPathComponent("AlmacRemote", isDirectory: true)
         try? fm.createDirectory(at: base, withIntermediateDirectories: true)
         return base.appendingPathComponent("known_hosts").path
     }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// mRemoteNXT — Copyright (c) 2026 Razvan Cremenescu
+// Almac Remote — based on mRemoteNXT, Copyright (c) 2026 Razvan Cremenescu
 // See LICENSE for full text.
 
 import SwiftUI
@@ -21,7 +21,7 @@ final class RDPNSView: NSView, RDPClientDelegate {
     /// Called on disconnect AFTER a successful connection (not on connect failure).
     var onDisconnect: (() -> Void)?
 
-    private let session: Session
+    private var session: Session
     private var didStart = false
 
     init(session: Session) {
@@ -30,7 +30,14 @@ final class RDPNSView: NSView, RDPClientDelegate {
         wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor
         layer?.contentsGravity = .resizeAspect
-        showStatus("Connecting to \(session.node.hostname)...")
+        showStatus(session.proxyState == .connecting ? t("Proxy.Connecting") : "Connecting to \(session.node.hostname)...")
+    }
+
+    /// Refreshes the session snapshot (e.g. proxyState going .connecting -> .ready)
+    /// and, if we were waiting on a proxy tunnel, retries starting the connection.
+    func updateSession(_ newSession: Session) {
+        session = newSession
+        if !didStart { startIfNeeded() }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) unsupported") }
@@ -63,6 +70,16 @@ final class RDPNSView: NSView, RDPClientDelegate {
 
     private func startIfNeeded() {
         guard !didStart, window != nil, bounds.width > 100, bounds.height > 100 else { return }
+        switch session.proxyState {
+        case .connecting:
+            showStatus(t("Proxy.Connecting"))
+            return
+        case .failed(let message):
+            showStatus(message)
+            return
+        case .none, .ready:
+            break
+        }
         didStart = true
 
         let t = targetPixels()
@@ -75,8 +92,15 @@ final class RDPNSView: NSView, RDPClientDelegate {
             domain = String(user[..<r.lowerBound])
             user = String(user[r.upperBound...])
         }
+        var host = node.hostname
+        var port = node.port
+        if case .ready(let localPort) = session.proxyState {
+            host = "127.0.0.1"
+            port = localPort
+        }
 
-        let c = RDPClient(host: node.hostname, port: Int32(node.port),
+        showStatus("Connecting to \(host)...")
+        let c = RDPClient(host: host, port: Int32(port),
                           username: user, domain: domain,
                           password: session.password,
                           width: Int32(t.w), height: Int32(t.h), scale: Int32(t.scalePct))
@@ -265,6 +289,7 @@ struct RDPContainer: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: RDPNSView, context: Context) {
+        nsView.updateSession(session)
         guard isActive else { return }
         DispatchQueue.main.async {
             guard let w = nsView.window else { return }
