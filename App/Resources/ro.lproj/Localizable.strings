@@ -12,6 +12,8 @@
 /* Meniuri */
 "Menu.NewFile" = "Configuratie noua...";
 "Menu.OpenFile" = "Deschide confCons.xml...";
+"Menu.NewLocalTerminal" = "Terminal local nou";
+"Terminal.LocalTitle" = "Terminal";
 "Menu.CloseFile" = "Inchide configuratia";
 "NewDoc.Prompt" = "Alege unde salvezi configuratia noua.";
 "Error.SaveFailed" = "Salvare esuata: %@";
@@ -202,3 +204,25 @@
 "Security.Locked" = "Almac Remote este blocat";
 "Security.Unlock" = "Deblocheaza";
 "Security.UnlockReason" = "Deblocheaza Almac Remote";
+
+/* Authenticator: standalone TOTP vault (like Google Authenticator) */
+"Authenticator.Menu" = "Authenticator…";
+"Authenticator.Title" = "Authenticator";
+"Authenticator.Empty" = "Niciun cod inca. Adauga unul dintr-o imagine QR sau cheia secreta.";
+"Authenticator.Add" = "Adauga";
+"Authenticator.AddTitle" = "Adauga cod Authenticator";
+"Authenticator.Mode.QR" = "Scaneaza imagine QR";
+"Authenticator.Mode.Manual" = "Introdu secretul";
+"Authenticator.DropHint" = "Trage aici o imagine cu codul QR, sau";
+"Authenticator.ChooseImage" = "Alege imagine…";
+"Authenticator.Label" = "Eticheta";
+"Authenticator.LabelPlaceholder" = "ex. GitHub (tu@example.com)";
+"Authenticator.Secret" = "Secret";
+"Authenticator.SecretPlaceholder" = "Cheie secreta (Base32)";
+"Authenticator.UntitledLabel" = "Fara titlu";
+"Authenticator.QRDecodeFailed" = "Nu s-a gasit niciun cod QR in acea imagine.";
+"Authenticator.QROtpauthInvalid" = "Acel cod QR nu este un cod TOTP valid (otpauth://).";
+"Authenticator.InvalidSecret" = "Secret invalid";
+"Authenticator.Save" = "Salveaza";
+"Authenticator.Cancel" = "Anuleaza";
+"Authenticator.CopyCode" = "Copiaza codul";

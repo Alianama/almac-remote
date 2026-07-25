@@ -14,6 +14,8 @@
 "Menu.HelpWindow" = "Almac Remote Help";
 "Menu.NewFile" = "New configuration...";
 "Menu.OpenFile" = "Open confCons.xml...";
+"Menu.NewLocalTerminal" = "New Local Terminal";
+"Terminal.LocalTitle" = "Terminal";
 "Menu.CloseFile" = "Close configuration";
 "NewDoc.Prompt" = "Choose where to save the new configuration.";
 "Error.SaveFailed" = "Save failed: %@";
@@ -200,3 +202,25 @@
 "Security.Locked" = "Almac Remote is Locked";
 "Security.Unlock" = "Unlock";
 "Security.UnlockReason" = "Unlock Almac Remote";
+
+/* Authenticator: standalone TOTP vault (like Google Authenticator) */
+"Authenticator.Menu" = "Authenticator…";
+"Authenticator.Title" = "Authenticator";
+"Authenticator.Empty" = "No codes yet. Add one from a QR code image or its secret key.";
+"Authenticator.Add" = "Add";
+"Authenticator.AddTitle" = "Add Authenticator Code";
+"Authenticator.Mode.QR" = "Scan QR Image";
+"Authenticator.Mode.Manual" = "Enter Secret";
+"Authenticator.DropHint" = "Drop a QR code image here, or";
+"Authenticator.ChooseImage" = "Choose Image…";
+"Authenticator.Label" = "Label";
+"Authenticator.LabelPlaceholder" = "e.g. GitHub (you@example.com)";
+"Authenticator.Secret" = "Secret";
+"Authenticator.SecretPlaceholder" = "Base32 secret key";
+"Authenticator.UntitledLabel" = "Untitled";
+"Authenticator.QRDecodeFailed" = "Couldn't find a QR code in that image.";
+"Authenticator.QROtpauthInvalid" = "That QR code isn't a valid TOTP (otpauth://) code.";
+"Authenticator.InvalidSecret" = "Invalid secret";
+"Authenticator.Save" = "Save";
+"Authenticator.Cancel" = "Cancel";
+"Authenticator.CopyCode" = "Copy code";

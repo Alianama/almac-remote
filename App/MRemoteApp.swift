@@ -48,6 +48,9 @@ struct MRemoteApp: App {
                 Button(t("Menu.OpenFile")) { model.openFilePanel() }
                     .keyboardShortcut("o")
                 Divider()
+                Button(t("Menu.NewLocalTerminal")) { model.openLocalTerminal() }
+                    .keyboardShortcut("t", modifiers: [.command, .shift])
+                Divider()
                 Button(t("Menu.CloseFile")) { model.closeDocument() }
                     .keyboardShortcut("w", modifiers: [.command, .shift])
                     .disabled(model.doc == nil)
@@ -63,6 +66,9 @@ struct MRemoteApp: App {
                     .keyboardShortcut("l", modifiers: [.command, .control])
                     .disabled(!model.lockEnabled || model.isLocked)
                 Divider()
+                Button(t("Authenticator.Menu")) { openWindow(id: "authenticator") }
+                    .keyboardShortcut("a", modifiers: [.command, .shift])
+                Divider()
                 Toggle(t("Security.LockWhenIdle"), isOn: $model.lockEnabled)
                 Picker(t("Security.IdleTimeout"), selection: $model.idleLockMinutes) {
                     Text(t("Security.1Minute")).tag(1.0)
@@ -77,6 +83,13 @@ struct MRemoteApp: App {
         // A real Window (not the Settings scene) so it can be resized manually.
         Window(t("Settings.Title"), id: "preferences") {
             SettingsView()
+                .environmentObject(model)
+                .environmentObject(lang)
+        }
+        .windowResizability(.contentMinSize)
+
+        Window(t("Authenticator.Title"), id: "authenticator") {
+            AuthenticatorWindowView()
                 .environmentObject(model)
                 .environmentObject(lang)
         }

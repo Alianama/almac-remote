@@ -304,10 +304,9 @@ struct ContentView: View {
 
     @ViewBuilder private var detail: some View {
         VStack(spacing: 0) {
-            if !model.sessions.isEmpty {
-                SessionTabBar()
-                Divider()
-            }
+            // Always shown (even with zero tabs) so the "+" new-terminal button stays reachable.
+            SessionTabBar()
+            Divider()
             ZStack {
                 // Sessions stay alive in the hierarchy -> the ssh process doesn't restart when switching tabs.
                 ForEach(model.sessions) { session in
@@ -641,7 +640,32 @@ struct PanelTabBar: View {
 
 struct SessionTabBar: View {
     @EnvironmentObject var model: AppModel
+    // Matches a populated tab pill's natural height (icon/text + its padding) — fixed
+    // so the whole bar (and the "+" button's vertical position) doesn't shrink when
+    // there are zero tabs, where the empty ScrollView would otherwise collapse.
+    private let barHeight: CGFloat = 34
+
     var body: some View {
+        HStack(spacing: 4) {
+            // Explicit maxWidth so the row always spans the full bar (even with zero
+            // tabs, where an empty ScrollView would otherwise shrink to fit its empty
+            // content) — keeps the "+" button pinned at the trailing edge either way.
+            tabScrollView
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button { model.openLocalTerminal() } label: {
+                Image(systemName: "plus")
+                    .font(.caption.bold())
+                    .frame(width: 22, height: 22)
+                    .background(Circle().strokeBorder(.secondary.opacity(0.5)))
+            }
+            .buttonStyle(.plain)
+            .help(t("Menu.NewLocalTerminal"))
+            .padding(.trailing, 8)
+        }
+        .frame(height: barHeight)
+    }
+
+    private var tabScrollView: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
                 ForEach(model.sessions(inPanel: model.selectedPanel)) { session in
@@ -691,7 +715,7 @@ struct SessionView: View {
     var fontSize: Double = 13
     var body: some View {
         switch session.kind {
-        case .ssh, .telnet, .sftp, .externalTool:
+        case .ssh, .telnet, .sftp, .externalTool, .localShell:
             TerminalContainer(
                 session: session,
                 isActive: isActive,

@@ -220,6 +220,9 @@ final class MRNGTerminalView: LocalProcessTerminalView {
 final class TerminalCoordinator: NSObject, LocalProcessTerminalViewDelegate {
     var onTitleChange: (String) -> Void = { _ in }
     var onProcessExit: (Int32?) -> Void = { _ in }
+    /// The actual terminal view, since `TerminalContainer` now hands SwiftUI a
+    /// plain wrapper (for the top/side inset) instead of the terminal itself.
+    weak var terminal: MRNGTerminalView?
 
     func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
@@ -246,20 +249,42 @@ struct TerminalContainer: NSViewRepresentable {
     /// AppModel uses it to rename the SwiftUI tab live (e.g. `user@host:cwd`).
     var onTitleChange: (String) -> Void = { _ in }
 
+    // Small top/side margin so the terminal content doesn't sit flush against the
+    // tab bar above it or the window edges — matches Terminal.app's own inset.
+    // Bottom stays flush (no visual boundary to separate from there).
+    private let topInset: CGFloat = 6
+    private let sideInset: CGFloat = 8
+
     func makeCoordinator() -> TerminalCoordinator { TerminalCoordinator() }
 
-    func makeNSView(context: Context) -> LocalProcessTerminalView {
+    func makeNSView(context: Context) -> NSView {
         let term = MRNGTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
         term.font = NSFont.monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .regular)
         TerminalThemes.apply(theme, to: term)
         context.coordinator.onTitleChange = onTitleChange
+        context.coordinator.terminal = term
         term.processDelegate = context.coordinator
         startIfReady(term)
         // Apply blink after the child has had a moment to render the prompt.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             term.applyCursorBlinkSpeed(cursorBlinkSpeed)
         }
-        return term
+
+        // Wrap in a plain container so the terminal can be inset from it —
+        // background matches the terminal's own so the inset margin isn't a
+        // visible mismatched-color gutter.
+        let container = NSView()
+        container.wantsLayer = true
+        container.layer?.backgroundColor = term.nativeBackgroundColor.cgColor
+        container.addSubview(term)
+        term.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            term.topAnchor.constraint(equalTo: container.topAnchor, constant: topInset),
+            term.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: sideInset),
+            term.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -sideInset),
+            term.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        return container
     }
 
     /// Spawns the real ssh/telnet/sftp process, unless we're still waiting on
@@ -271,23 +296,23 @@ struct TerminalContainer: NSViewRepresentable {
         term.startProcess(executable: exe, args: args, environment: nil, execName: nil)
     }
 
-    func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let term = context.coordinator.terminal else { return }
         let desired = NSFont.monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .regular)
-        if nsView.font.pointSize != desired.pointSize {
-            nsView.font = desired
+        if term.font.pointSize != desired.pointSize {
+            term.font = desired
         }
-        TerminalThemes.apply(theme, to: nsView)
+        TerminalThemes.apply(theme, to: term)
+        nsView.layer?.backgroundColor = term.nativeBackgroundColor.cgColor
         context.coordinator.onTitleChange = onTitleChange
-        if let term = nsView as? MRNGTerminalView {
-            term.applyCursorBlinkSpeed(cursorBlinkSpeed)
-            startIfReady(term)
-        }
+        term.applyCursorBlinkSpeed(cursorBlinkSpeed)
+        startIfReady(term)
         // Give the terminal first responder status when its tab becomes active.
         guard isActive else { return }
         DispatchQueue.main.async {
-            guard let window = nsView.window else { return }
+            guard let window = term.window else { return }
             if window.firstResponder is NSText { return } // user is typing in search etc.
-            if window.firstResponder !== nsView { window.makeFirstResponder(nsView) }
+            if window.firstResponder !== term { window.makeFirstResponder(term) }
         }
     }
 
@@ -336,6 +361,9 @@ struct TerminalContainer: NSViewRepresentable {
             ])
         case .externalTool:
             return ("/bin/sh", ["-lc", session.command ?? "echo 'no command'"])
+        case .localShell:
+            // -l: login shell, so .zprofile/.profile etc. run same as Terminal.app.
+            return (ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh", ["-l"])
         default:
             return ("/bin/echo", ["Protocol not implemented in the terminal."])
         }

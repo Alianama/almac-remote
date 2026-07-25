@@ -40,11 +40,11 @@ final class SSHTunnel {
         // goes through an env var (not argv), which also keeps it out of `ps`.
         var askpassPath: String?
         var env = ProcessInfo.processInfo.environment
-        if !proxyPassword.isEmpty, let script = SSHTunnel.writeAskpassScript() {
+        if !proxyPassword.isEmpty, let script = SSHAskpass.writeScript() {
             askpassPath = script
             env["SSH_ASKPASS"] = script
             env["SSH_ASKPASS_REQUIRE"] = "force"
-            env["MRNG_SSH_TUNNEL_ASKPASS_SECRET"] = proxyPassword
+            env["MRNG_SSH_ASKPASS_SECRET"] = proxyPassword
         }
         p.environment = env
         askpassScriptPath = askpassPath
@@ -61,16 +61,6 @@ final class SSHTunnel {
     func stop() {
         if process.isRunning { process.terminate() }
         if let path = askpassScriptPath { try? FileManager.default.removeItem(atPath: path) }
-    }
-
-    /// A one-line script that hands ssh the password via an env var (never written
-    /// to disk itself, never in argv). 0700 so only this user can read/execute it.
-    private static func writeAskpassScript() -> String? {
-        let path = NSTemporaryDirectory() + "mrng-askpass-\(UUID().uuidString).sh"
-        let script = "#!/bin/sh\nexec echo \"$MRNG_SSH_TUNNEL_ASKPASS_SECRET\"\n"
-        guard (try? script.write(toFile: path, atomically: true, encoding: .utf8)) != nil else { return nil }
-        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: path)
-        return path
     }
 
     /// Polls `127.0.0.1:localPort` until it accepts a TCP connection, or times out.

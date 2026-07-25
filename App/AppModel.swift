@@ -9,7 +9,7 @@ import LocalAuthentication
 
 /// An open session backed by a tab.
 struct Session: Identifiable {
-    enum Kind { case ssh, telnet, http, externalApp, rdp, sftp, externalTool, unsupported }
+    enum Kind { case ssh, telnet, http, externalApp, rdp, sftp, externalTool, localShell, unsupported }
     /// Whether this session needs to tunnel through an SSH jump host before the
     /// real protocol connection can start, and how that's going.
     enum ProxyState: Equatable {
@@ -33,6 +33,15 @@ struct ExternalTool: Codable, Identifiable, Hashable {
     var id = UUID()
     var name: String
     var commandLine: String
+}
+
+/// A standalone TOTP (2FA) entry — a personal-authenticator-style vault, independent
+/// of any RDP/SSH connection. The secret is stored encrypted, same scheme as
+/// connection passwords (see `AppModel.encryptAuthenticatorSecret`).
+struct AuthenticatorEntry: Codable, Identifiable, Hashable {
+    var id = UUID()
+    var label: String
+    var encryptedSecret: String
 }
 
 /// A visible row in the flattened tree (carrying its depth for indentation).
@@ -145,6 +154,10 @@ final class AppModel: ObservableObject {
     }
     @Published var externalTools: [ExternalTool] = [] {
         didSet { saveTools() }
+    }
+    /// Standalone TOTP vault (not tied to any connection) — see `AuthenticatorEntry`.
+    @Published var authenticatorEntries: [AuthenticatorEntry] = [] {
+        didSet { saveAuthenticatorEntries() }
     }
     /// User-created terminal themes (start from a Ghostty-sourced built-in,
     /// tweak colors, save as new) — a name here shadows a built-in of the same name.
@@ -264,6 +277,7 @@ final class AppModel: ObservableObject {
         startIdleMonitoring()
         loadTools()
         loadCustomThemes()
+        loadAuthenticatorEntries()
         // Auto-reopen the last file used (if it still exists on disk).
         if let saved = UserDefaults.standard.string(forKey: "lastOpenedFile"),
            FileManager.default.fileExists(atPath: saved) {
@@ -422,6 +436,43 @@ final class AppModel: ObservableObject {
         let secret = decryptedTOTPSecret(for: node)
         guard !secret.isEmpty else { return nil }
         return TOTP.code(secretBase32: secret, date: date)
+    }
+
+    // MARK: - Standalone Authenticator vault
+
+    /// Fixed iterations for the standalone vault — unlike connection secrets, entries
+    /// aren't tied to any confCons document (`doc.kdfIterations`), so this can't
+    /// borrow that value; 1000 matches what a new document defaults to.
+    private static let authenticatorKdfIterations = 1000
+
+    func addAuthenticatorEntry(label: String, secret: String) {
+        let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        let encrypted = MRNGCrypto.encrypt(plaintext: secret, password: masterPassword,
+                                            iterations: AppModel.authenticatorKdfIterations)
+        authenticatorEntries.append(AuthenticatorEntry(
+            label: trimmedLabel.isEmpty ? t("Authenticator.UntitledLabel") : trimmedLabel,
+            encryptedSecret: encrypted))
+    }
+
+    func deleteAuthenticatorEntry(_ entry: AuthenticatorEntry) {
+        authenticatorEntries.removeAll { $0.id == entry.id }
+    }
+
+    func decryptedAuthenticatorSecret(_ entry: AuthenticatorEntry) -> String {
+        MRNGCrypto.decrypt(base64: entry.encryptedSecret, password: masterPassword,
+                            iterations: AppModel.authenticatorKdfIterations) ?? ""
+    }
+
+    private func loadAuthenticatorEntries() {
+        guard let data = UserDefaults.standard.data(forKey: "authenticatorEntries"),
+              let entries = try? JSONDecoder().decode([AuthenticatorEntry].self, from: data) else { return }
+        authenticatorEntries = entries
+    }
+
+    private func saveAuthenticatorEntries() {
+        if let data = try? JSONEncoder().encode(authenticatorEntries) {
+            UserDefaults.standard.set(data, forKey: "authenticatorEntries")
+        }
     }
 
     /// Decrypted password for this connection's SSH jump host (ProxyJump), or "".
@@ -634,8 +685,19 @@ final class AppModel: ObservableObject {
         case "HTTP", "HTTPS": return .http
         case "RDP": return .rdp
         case "IntApp": return .externalApp
+        case "LocalShell": return .localShell
         default: return .unsupported
         }
+    }
+
+    /// Opens a plain local shell tab (like Terminal.app) — no remote host involved.
+    func openLocalTerminal() {
+        let node = MRNGNode.makeConnection(name: t("Terminal.LocalTitle"), protocolType: "LocalShell")
+        let session = Session(title: node.name, kind: .localShell, node: node, password: "",
+                              panel: selectedPanel ?? "General")
+        sessions.append(session)
+        selectedSessionID = session.id
+        selectedPanel = session.panel
     }
 
     /// Background SSH jump-host tunnels, one per session that needs one, keyed

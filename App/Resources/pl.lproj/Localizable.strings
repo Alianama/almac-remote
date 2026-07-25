@@ -14,6 +14,8 @@
 "Menu.HelpWindow" = "Pomoc Almac Remote";
 "Menu.NewFile" = "Nowa konfiguracja...";
 "Menu.OpenFile" = "Otwórz confCons.xml...";
+"Menu.NewLocalTerminal" = "Nowy terminal lokalny";
+"Terminal.LocalTitle" = "Terminal";
 "Menu.CloseFile" = "Zamknij konfigurację";
 "NewDoc.Prompt" = "Wybierz miejsce zapisania nowej konfiguracji.";
 "Error.SaveFailed" = "Zapisywanie nie powiodło się: %@";
@@ -200,3 +202,25 @@
 "Security.Locked" = "Almac Remote jest zablokowany";
 "Security.Unlock" = "Odblokuj";
 "Security.UnlockReason" = "Odblokuj Almac Remote";
+
+/* Authenticator: standalone TOTP vault (like Google Authenticator) */
+"Authenticator.Menu" = "Authenticator…";
+"Authenticator.Title" = "Authenticator";
+"Authenticator.Empty" = "Brak kodow. Dodaj jeden ze zdjecia kodu QR lub klucza secret.";
+"Authenticator.Add" = "Dodaj";
+"Authenticator.AddTitle" = "Dodaj kod Authenticator";
+"Authenticator.Mode.QR" = "Skanuj obraz QR";
+"Authenticator.Mode.Manual" = "Wpisz secret";
+"Authenticator.DropHint" = "Upusc tutaj obraz kodu QR, lub";
+"Authenticator.ChooseImage" = "Wybierz obraz…";
+"Authenticator.Label" = "Etykieta";
+"Authenticator.LabelPlaceholder" = "np. GitHub (ty@example.com)";
+"Authenticator.Secret" = "Secret";
+"Authenticator.SecretPlaceholder" = "Klucz secret (Base32)";
+"Authenticator.UntitledLabel" = "Bez nazwy";
+"Authenticator.QRDecodeFailed" = "Nie znaleziono kodu QR na tym obrazie.";
+"Authenticator.QROtpauthInvalid" = "Ten kod QR nie jest prawidlowym kodem TOTP (otpauth://).";
+"Authenticator.InvalidSecret" = "Nieprawidlowy secret";
+"Authenticator.Save" = "Zapisz";
+"Authenticator.Cancel" = "Anuluj";
+"Authenticator.CopyCode" = "Kopiuj kod";
