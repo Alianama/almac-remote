@@ -49,6 +49,9 @@ final class MRNGTerminalView: LocalProcessTerminalView {
     /// Set once `startProcess` has actually been called — lets `TerminalContainer`
     /// defer the spawn while a proxy tunnel is still connecting.
     var started = false
+    /// Notifies `TerminalContainer` when this specific pane gains keyboard focus —
+    /// used to track which pane is focused when a tab is split into two.
+    var onFocus: (() -> Void)?
     private var mouseUpMonitor: Any?
     private var autoScrollTimer: Timer?
     private var lastDragWindowLocation: NSPoint?
@@ -76,13 +79,18 @@ final class MRNGTerminalView: LocalProcessTerminalView {
         rightClick.buttonMask = 0x2 // right button only (left stays for selection)
         addGestureRecognizer(rightClick)
 
-        // Observe left mouse drag AND up: drag drives auto-scroll, up triggers
+        // Observe left mouse down/drag/up: down reports which pane got clicked (for
+        // split-tab focus tracking, since we can't override becomeFirstResponder —
+        // it's not `open` in SwiftTerm), drag drives auto-scroll, up triggers
         // copy-on-select. SwiftTerm processes them too — we don't consume the event.
         mouseUpMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.leftMouseUp, .leftMouseDragged]
+            matching: [.leftMouseDown, .leftMouseUp, .leftMouseDragged]
         ) { [weak self] event in
             guard let self, event.window === self.window else { return event }
             switch event.type {
+            case .leftMouseDown:
+                let pt = self.convert(event.locationInWindow, from: nil)
+                if self.bounds.contains(pt) { self.onFocus?() }
             case .leftMouseUp:
                 self.stopAutoScroll()
                 if self.selectionActive {
@@ -220,6 +228,7 @@ final class MRNGTerminalView: LocalProcessTerminalView {
 final class TerminalCoordinator: NSObject, LocalProcessTerminalViewDelegate {
     var onTitleChange: (String) -> Void = { _ in }
     var onProcessExit: (Int32?) -> Void = { _ in }
+    var onFocus: () -> Void = {}
     /// The actual terminal view, since `TerminalContainer` now hands SwiftUI a
     /// plain wrapper (for the top/side inset) instead of the terminal itself.
     weak var terminal: MRNGTerminalView?
@@ -237,6 +246,23 @@ final class TerminalCoordinator: NSObject, LocalProcessTerminalViewDelegate {
     }
 }
 
+/// Keeps each session's live terminal NSView (and its running ssh/shell process)
+/// around by session id, independent of where SwiftUI currently mounts it.
+/// Splitting a tab moves its `TerminalContainer` into a new HSplitView/VSplitView
+/// parent, which SwiftUI treats as a different view tree and would otherwise
+/// call `makeNSView` again — restarting the process and forcing a fresh login.
+/// `AppModel.closeSession`/`reconnect` call `remove(_:)` when a session should
+/// actually go away.
+@MainActor
+final class TerminalViewRegistry {
+    static let shared = TerminalViewRegistry()
+    private var entries: [UUID: (container: NSView, term: MRNGTerminalView)] = [:]
+
+    func existing(for id: UUID) -> (container: NSView, term: MRNGTerminalView)? { entries[id] }
+    func store(_ id: UUID, container: NSView, term: MRNGTerminalView) { entries[id] = (container, term) }
+    func remove(_ id: UUID) { entries[id] = nil }
+}
+
 /// SwiftUI wrapper over SwiftTerm's LocalProcessTerminalView. Spawns the system
 /// ssh/telnet/sftp in a PTY embedded in the tab.
 struct TerminalContainer: NSViewRepresentable {
@@ -248,6 +274,9 @@ struct TerminalContainer: NSViewRepresentable {
     /// Called when the underlying terminal reports a new title via OSC 0/1/2.
     /// AppModel uses it to rename the SwiftUI tab live (e.g. `user@host:cwd`).
     var onTitleChange: (String) -> Void = { _ in }
+    /// Called when this pane becomes first responder — lets a split tab track
+    /// which of its two panes currently has keyboard focus.
+    var onFocus: () -> Void = {}
 
     // Small top/side margin so the terminal content doesn't sit flush against the
     // tab bar above it or the window edges — matches Terminal.app's own inset.
@@ -258,12 +287,21 @@ struct TerminalContainer: NSViewRepresentable {
     func makeCoordinator() -> TerminalCoordinator { TerminalCoordinator() }
 
     func makeNSView(context: Context) -> NSView {
+        if let existing = TerminalViewRegistry.shared.existing(for: session.id) {
+            context.coordinator.onTitleChange = onTitleChange
+            context.coordinator.onFocus = onFocus
+            context.coordinator.terminal = existing.term
+            existing.term.processDelegate = context.coordinator
+            existing.term.onFocus = { [coordinator = context.coordinator] in coordinator.onFocus() }
+            return existing.container
+        }
         let term = MRNGTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
         term.font = NSFont.monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .regular)
         TerminalThemes.apply(theme, to: term)
         context.coordinator.onTitleChange = onTitleChange
         context.coordinator.terminal = term
         term.processDelegate = context.coordinator
+        term.onFocus = { [coordinator = context.coordinator] in coordinator.onFocus() }
         startIfReady(term)
         // Apply blink after the child has had a moment to render the prompt.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -284,6 +322,7 @@ struct TerminalContainer: NSViewRepresentable {
             term.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -sideInset),
             term.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
+        TerminalViewRegistry.shared.store(session.id, container: container, term: term)
         return container
     }
 
@@ -305,6 +344,7 @@ struct TerminalContainer: NSViewRepresentable {
         TerminalThemes.apply(theme, to: term)
         nsView.layer?.backgroundColor = term.nativeBackgroundColor.cgColor
         context.coordinator.onTitleChange = onTitleChange
+        context.coordinator.onFocus = onFocus
         term.applyCursorBlinkSpeed(cursorBlinkSpeed)
         startIfReady(term)
         // Give the terminal first responder status when its tab becomes active.

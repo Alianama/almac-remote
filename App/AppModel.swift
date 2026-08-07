@@ -18,6 +18,8 @@ struct Session: Identifiable {
         case ready(Int)            // tunnel up — connect to 127.0.0.1:<port> instead
         case failed(String)
     }
+    /// Side by side (new pane to the right) or stacked (new pane below).
+    enum SplitDirection { case horizontal, vertical }
     let id = UUID()
     var title: String
     let kind: Kind
@@ -26,6 +28,14 @@ struct Session: Identifiable {
     let panel: String
     var command: String? = nil // for .externalTool: the resolved command line
     var proxyState: ProxyState = .none
+    /// When set, this session is one pane of a multi-pane split (up to
+    /// `AppModel.maxSplitPanes`); every session sharing the same group id renders
+    /// together. Only the primary appears in the tab bar — see `sessions(inPanel:)`.
+    var splitGroupID: UUID? = nil
+    /// True for exactly one session per split group: the one that appears in the
+    /// tab bar and owns the group's layout direction.
+    var isSplitPrimary: Bool = false
+    var splitDirection: SplitDirection? = nil
 }
 
 /// External tool: a command line with macros (%Host%, %Username%, %Port%, %Password%, %Domain%, %Name%).
@@ -80,8 +90,14 @@ final class AppModel: ObservableObject {
         didSet { persistSessionState() }
     }
     @Published var selectedSessionID: UUID? {
-        didSet { persistSessionState() }
+        didSet {
+            persistSessionState()
+            focusedSessionID = selectedSessionID
+        }
     }
+    /// Which pane has keyboard focus within the selected tab — usually the same as
+    /// `selectedSessionID`, but differs while a split tab's second pane is focused.
+    @Published var focusedSessionID: UUID?
     @Published var selectedPanel: String? {
         didSet { persistSessionState() }
     }
@@ -765,12 +781,94 @@ final class AppModel: ObservableObject {
     }
 
     func sessions(inPanel panel: String?) -> [Session] {
-        sessions.filter { $0.panel == panel }
+        sessions.filter { $0.panel == panel && ($0.splitGroupID == nil || $0.isSplitPrimary) }
+    }
+
+    /// Sessions that appear as their own tab (excludes non-primary split panes).
+    func topLevelSessions() -> [Session] {
+        sessions.filter { $0.splitGroupID == nil || $0.isSplitPrimary }
+    }
+
+    /// All panes of a split group, in stable (creation) order — the primary is
+    /// always first since it existed before any pane was added to the group.
+    func splitGroupMembers(_ groupID: UUID) -> [Session] {
+        sessions.filter { $0.splitGroupID == groupID }
+    }
+
+    /// Kinds where an interactive shell makes sense to split — not RDP/HTTP/GUI sessions.
+    private static let splittableKinds: Set<Session.Kind> = [.ssh, .telnet, .sftp, .externalTool, .localShell]
+    static let maxSplitPanes = 6
+
+    /// Whether the selected tab can gain another pane in `direction`. Once a tab
+    /// is split, its direction is locked in — the other direction's button stays
+    /// disabled until the group is back down to a single pane.
+    func canSplitSelectedSession(direction: Session.SplitDirection) -> Bool {
+        guard let id = selectedSessionID, let s = sessions.first(where: { $0.id == id }),
+              Self.splittableKinds.contains(s.kind)
+        else { return false }
+        guard let groupID = s.splitGroupID else { return true }
+        return s.splitDirection == direction && splitGroupMembers(groupID).count < Self.maxSplitPanes
+    }
+
+    /// Adds a new pane to the selected tab, alongside its existing panes (if any).
+    /// The first split picks `direction`; further panes just extend that same
+    /// group up to `maxSplitPanes` — the group's layout direction doesn't change.
+    func splitSelectedSession(direction: Session.SplitDirection) {
+        guard let id = selectedSessionID, let idx = sessions.firstIndex(where: { $0.id == id }),
+              Self.splittableKinds.contains(sessions[idx].kind)
+        else { return }
+        let groupID: UUID
+        if let existing = sessions[idx].splitGroupID {
+            guard splitGroupMembers(existing).count < Self.maxSplitPanes else { return }
+            groupID = existing
+        } else {
+            groupID = UUID()
+            sessions[idx].splitGroupID = groupID
+            sessions[idx].isSplitPrimary = true
+            sessions[idx].splitDirection = direction
+        }
+        var pane = makeSession(for: sessions[idx].node)
+        pane.splitGroupID = groupID
+        sessions.append(pane)
+        focusedSessionID = pane.id
+        startProxyTunnel(for: pane)
+    }
+
+    /// Closes just this one pane. The rest of its split group keeps running; if
+    /// that leaves only one pane, it reverts to a normal (non-split) tab.
+    func closeSplitPane(_ id: UUID) {
+        guard let idx = sessions.firstIndex(where: { $0.id == id }), let groupID = sessions[idx].splitGroupID else {
+            closeSession(id)
+            return
+        }
+        let wasPrimary = sessions[idx].isSplitPrimary
+        let remaining = splitGroupMembers(groupID).filter { $0.id != id }
+
+        if remaining.count <= 1 {
+            if let last = remaining.first, let lastIdx = sessions.firstIndex(where: { $0.id == last.id }) {
+                sessions[lastIdx].splitGroupID = nil
+                sessions[lastIdx].isSplitPrimary = false
+                sessions[lastIdx].splitDirection = nil
+                if wasPrimary {
+                    selectedSessionID = last.id
+                    selectedPanel = sessions[lastIdx].panel
+                }
+            }
+        } else if wasPrimary, let newPrimaryIdx = sessions.firstIndex(where: { $0.id == remaining[0].id }) {
+            sessions[newPrimaryIdx].isSplitPrimary = true
+            selectedSessionID = remaining[0].id
+            selectedPanel = sessions[newPrimaryIdx].panel
+        }
+
+        if focusedSessionID == id {
+            focusedSessionID = remaining.first?.id ?? selectedSessionID
+        }
+        closeSession(id)
     }
 
     func selectPanel(_ panel: String) {
         selectedPanel = panel
-        if let first = sessions.first(where: { $0.panel == panel }) {
+        if let first = topLevelSessions().first(where: { $0.panel == panel }) {
             selectedSessionID = first.id
         }
     }
@@ -778,11 +876,13 @@ final class AppModel: ObservableObject {
     func closeSession(_ id: UUID) {
         tunnels[id]?.stop()
         tunnels[id] = nil
+        TerminalViewRegistry.shared.remove(id)
         sessions.removeAll { $0.id == id }
         if selectedSessionID == id {
             // Prefer a session in the current panel; otherwise the last session.
-            let inPanel = sessions.last { $0.panel == selectedPanel }
-            let next = inPanel ?? sessions.last
+            let top = topLevelSessions()
+            let inPanel = top.last { $0.panel == selectedPanel }
+            let next = inPanel ?? top.last
             selectedSessionID = next?.id
             selectedPanel = next?.panel
         }
@@ -794,7 +894,11 @@ final class AppModel: ObservableObject {
         guard let idx = sessions.firstIndex(where: { $0.id == session.id }) else { return }
         tunnels[session.id]?.stop()
         tunnels[session.id] = nil
-        let fresh = makeSession(for: session.node)
+        TerminalViewRegistry.shared.remove(session.id)
+        var fresh = makeSession(for: session.node)
+        fresh.splitGroupID = session.splitGroupID
+        fresh.isSplitPrimary = session.isSplitPrimary
+        fresh.splitDirection = session.splitDirection
         sessions[idx] = fresh
         selectedSessionID = fresh.id
         selectedPanel = fresh.panel

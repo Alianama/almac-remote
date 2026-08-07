@@ -60,6 +60,13 @@ struct MRemoteApp: App {
                     .keyboardShortcut("=", modifiers: .command)
                 Button(t("Menu.ZoomOut")) { model.zoomTerminal(-1) }
                     .keyboardShortcut("-", modifiers: .command)
+                Divider()
+                Button(t("Terminal.SplitRight")) { model.splitSelectedSession(direction: .horizontal) }
+                    .keyboardShortcut("d", modifiers: .command)
+                    .disabled(!model.canSplitSelectedSession(direction: .horizontal))
+                Button(t("Terminal.SplitDown")) { model.splitSelectedSession(direction: .vertical) }
+                    .keyboardShortcut("d", modifiers: [.command, .shift])
+                    .disabled(!model.canSplitSelectedSession(direction: .vertical))
             }
             CommandMenu(t("Security.Menu")) {
                 Button { model.lockNow() } label: { Label(t("Security.LockNow"), systemImage: "lock.fill") }

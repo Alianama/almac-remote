@@ -21,6 +21,9 @@
 "Error.SaveFailed" = "Save failed: %@";
 "Menu.ZoomIn" = "Larger terminal text";
 "Menu.ZoomOut" = "Smaller terminal text";
+"Terminal.SplitRight" = "Split Right";
+"Terminal.SplitDown" = "Split Down";
+"Terminal.ClosePane" = "Close Pane";
 "Menu.Appearance" = "Appearance";
 "Menu.ExternalTools" = "External tools";
 

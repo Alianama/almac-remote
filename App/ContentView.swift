@@ -316,18 +316,62 @@ struct ContentView: View {
             Divider()
             ZStack {
                 // Sessions stay alive in the hierarchy -> the ssh process doesn't restart when switching tabs.
-                ForEach(model.sessions) { session in
-                    SessionView(session: session,
-                                isActive: session.id == model.selectedSessionID,
-                                fontSize: model.terminalFontSize)
-                        .opacity(session.id == model.selectedSessionID ? 1 : 0)
-                        .allowsHitTesting(session.id == model.selectedSessionID)
+                ForEach(model.topLevelSessions()) { session in
+                    let selected = session.id == model.selectedSessionID
+                    tabContent(session)
+                        .opacity(selected ? 1 : 0)
+                        .allowsHitTesting(selected)
                 }
                 if model.selectedSessionID == nil {
                     placeholder
                 }
             }
         }
+    }
+
+    /// A single pane, or its whole split group (up to `AppModel.maxSplitPanes`
+    /// panes) side by side / stacked, when the tab is split.
+    @ViewBuilder private func tabContent(_ session: Session) -> some View {
+        if let groupID = session.splitGroupID {
+            let members = model.splitGroupMembers(groupID)
+            let axis: Axis = session.splitDirection == .vertical ? .vertical : .horizontal
+            GeometryReader { geo in
+                let total = axis == .vertical ? geo.size.height : geo.size.width
+                let each = total / CGFloat(max(members.count, 1))
+                Group {
+                    if axis == .vertical {
+                        VSplitView { ForEach(members) { splitPane($0, axis: axis, idealLength: each) } }
+                    } else {
+                        HSplitView { ForEach(members) { splitPane($0, axis: axis, idealLength: each) } }
+                    }
+                }
+                // Rebuilding the split container itself (instead of letting NSSplitView
+                // patch in/out a subview) when the pane count changes is what gives every
+                // pane an equal share and avoids a resize/paint glitch where a closed
+                // pane's stale terminal content briefly shows through its neighbor. The
+                // underlying shell process survives via `TerminalViewRegistry` either way.
+                .id("\(groupID)-\(members.count)")
+            }
+        } else {
+            SessionView(session: session, isActive: session.id == model.focusedSessionID, fontSize: model.terminalFontSize)
+        }
+    }
+
+    private func splitPane(_ session: Session, axis: Axis, idealLength: CGFloat) -> some View {
+        SessionView(session: session, isActive: session.id == model.focusedSessionID, fontSize: model.terminalFontSize)
+            .frame(idealWidth: axis == .horizontal ? idealLength : nil,
+                   idealHeight: axis == .vertical ? idealLength : nil)
+            .overlay(Rectangle().strokeBorder(Color.secondary.opacity(0.4), lineWidth: 1))
+            .overlay(alignment: .topTrailing) {
+                Button { model.closeSplitPane(session.id) } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                        .background(Circle().fill(.background))
+                }
+                .buttonStyle(.plain)
+                .padding(6)
+                .help(t("Terminal.ClosePane"))
+            }
     }
 
     private var placeholder: some View {
@@ -659,6 +703,19 @@ struct SessionTabBar: View {
             // content) — keeps the "+" button pinned at the trailing edge either way.
             tabScrollView
                 .frame(maxWidth: .infinity, alignment: .leading)
+            Button { model.splitSelectedSession(direction: .horizontal) } label: {
+                Image(systemName: "square.split.2x1").font(.callout)
+            }
+            .buttonStyle(.plain)
+            .help(t("Terminal.SplitRight"))
+            .disabled(!model.canSplitSelectedSession(direction: .horizontal))
+            Button { model.splitSelectedSession(direction: .vertical) } label: {
+                Image(systemName: "square.split.1x2").font(.callout)
+            }
+            .buttonStyle(.plain)
+            .help(t("Terminal.SplitDown"))
+            .disabled(!model.canSplitSelectedSession(direction: .vertical))
+            Divider().frame(height: 16)
             Button { model.openLocalTerminal() } label: {
                 Image(systemName: "plus")
                     .font(.caption.bold())
@@ -731,7 +788,8 @@ struct SessionView: View {
                 cursorBlinkSpeed: model.cursorBlinkSpeed,
                 onTitleChange: { newTitle in
                     model.updateTitleFromTerminal(session.id, newTitle)
-                }
+                },
+                onFocus: { model.focusedSessionID = session.id }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .rdp:

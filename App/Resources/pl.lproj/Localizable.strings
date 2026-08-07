@@ -21,6 +21,9 @@
 "Error.SaveFailed" = "Zapisywanie nie powiodło się: %@";
 "Menu.ZoomIn" = "Większy tekst terminala";
 "Menu.ZoomOut" = "Mniejszy tekst terminala";
+"Terminal.SplitRight" = "Podziel w prawo";
+"Terminal.SplitDown" = "Podziel w dol";
+"Terminal.ClosePane" = "Zamknij panel";
 "Menu.Appearance" = "Wygląd";
 "Menu.ExternalTools" = "Narzędzia zewnętrzne";
 

@@ -19,6 +19,9 @@
 "Error.SaveFailed" = "Salvare esuata: %@";
 "Menu.ZoomIn" = "Mareste textul terminalului";
 "Menu.ZoomOut" = "Micsoreaza textul terminalului";
+"Terminal.SplitRight" = "Imparte la dreapta";
+"Terminal.SplitDown" = "Imparte jos";
+"Terminal.ClosePane" = "Inchide panoul";
 "Menu.Appearance" = "Aspect";
 "Menu.ExternalTools" = "Unelte externe";
 
