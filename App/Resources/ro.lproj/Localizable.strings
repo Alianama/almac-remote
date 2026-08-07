@@ -127,6 +127,8 @@
 "Editor.Field.TOTPSecret" = "Secret 2FA";
 "Editor.TOTPSecretPlaceholder" = "Secret Base32 (Google Authenticator)";
 "Editor.TOTPInvalidSecret" = "Secret invalid";
+"Editor.TOTPUploadImage" = "Incarca imagine QR…";
+"Editor.TOTPPasteImage" = "Lipeste imagine QR";
 
 /* Conexiune / salvare */
 "Connection.NewConnectionName" = "Conexiune noua";
@@ -206,7 +208,8 @@
 "Security.UnlockReason" = "Deblocheaza Almac Remote";
 
 /* Authenticator: standalone TOTP vault (like Google Authenticator) */
-"Authenticator.Menu" = "Authenticator…";
+"Authenticator.Menu" = "Authenticator";
+"Authenticator.Open" = "Deschide Authenticator…";
 "Authenticator.Title" = "Authenticator";
 "Authenticator.Empty" = "Niciun cod inca. Adauga unul dintr-o imagine QR sau cheia secreta.";
 "Authenticator.Add" = "Adauga";
@@ -215,6 +218,8 @@
 "Authenticator.Mode.Manual" = "Introdu secretul";
 "Authenticator.DropHint" = "Trage aici o imagine cu codul QR, sau";
 "Authenticator.ChooseImage" = "Alege imagine…";
+"Authenticator.PasteImage" = "Lipeste imagine";
+"Authenticator.NoClipboardImage" = "Nu s-a gasit nicio imagine in clipboard.";
 "Authenticator.Label" = "Eticheta";
 "Authenticator.LabelPlaceholder" = "ex. GitHub (tu@example.com)";
 "Authenticator.Secret" = "Secret";

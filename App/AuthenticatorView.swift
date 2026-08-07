@@ -198,7 +198,10 @@ private struct AddAuthenticatorEntrySheet: View {
         VStack(spacing: 8) {
             Image(systemName: "qrcode.viewfinder").font(.system(size: 32)).foregroundStyle(.secondary)
             Text(t("Authenticator.DropHint")).font(.caption).foregroundStyle(.secondary)
-            Button(t("Authenticator.ChooseImage")) { chooseImageFile() }
+            HStack(spacing: 8) {
+                Button(t("Authenticator.ChooseImage")) { chooseImageFile() }
+                Button(t("Authenticator.PasteImage")) { pasteImageFromClipboard() }
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(20)
@@ -236,6 +239,14 @@ private struct AddAuthenticatorEntrySheet: View {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url, let image = NSImage(contentsOf: url) else { return }
+        handleQRImage(image)
+    }
+
+    private func pasteImageFromClipboard() {
+        guard let image = NSImage(pasteboard: NSPasteboard.general) else {
+            errorMessage = t("Authenticator.NoClipboardImage")
+            return
+        }
         handleQRImage(image)
     }
 

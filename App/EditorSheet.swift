@@ -41,6 +41,7 @@ struct EditorSheet: View {
     @State private var passwordPlain: String = ""
     @State private var originalPasswordPlain: String = ""
     @State private var totpSecretPlain: String = ""
+    @State private var totpQRError: String?
     @State private var proxyPasswordPlain: String = ""
 
     private let protocols = ["RDP", "SSH2", "SSH1", "Telnet", "VNC", "HTTP", "HTTPS", "IntApp"]
@@ -233,6 +234,12 @@ struct EditorSheet: View {
                     node.attributes["TOTPSecret"] = newValue.isEmpty ? "" : model.encrypt(newValue)
                     model.markDirty()
                 }
+            Button { uploadTOTPQRImage() } label: { Image(systemName: "photo.badge.plus") }
+                .buttonStyle(.borderless)
+                .help(t("Editor.TOTPUploadImage"))
+            Button { pasteTOTPQRImage() } label: { Image(systemName: "doc.on.clipboard") }
+                .buttonStyle(.borderless)
+                .help(t("Editor.TOTPPasteImage"))
             if !totpSecretPlain.isEmpty {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     if let code = TOTP.code(secretBase32: totpSecretPlain, date: context.date) {
@@ -248,6 +255,39 @@ struct EditorSheet: View {
             }
             Spacer()
         }
+        if let totpQRError {
+            Text(totpQRError).font(.caption2).foregroundStyle(.red)
+        }
+    }
+
+    private func loadTOTPSecretFromImage(_ image: NSImage) {
+        totpQRError = nil
+        guard let payload = OTPAuthQRCode.decode(image: image) else {
+            totpQRError = t("Authenticator.QRDecodeFailed")
+            return
+        }
+        guard let parsed = OTPAuthQRCode.parse(payload) else {
+            totpQRError = t("Authenticator.QROtpauthInvalid")
+            return
+        }
+        totpSecretPlain = parsed.secret
+    }
+
+    private func uploadTOTPQRImage() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url, let image = NSImage(contentsOf: url) else { return }
+        loadTOTPSecretFromImage(image)
+    }
+
+    private func pasteTOTPQRImage() {
+        guard let image = NSImage(pasteboard: NSPasteboard.general) else {
+            totpQRError = t("Authenticator.NoClipboardImage")
+            return
+        }
+        loadTOTPSecretFromImage(image)
     }
 
     @ViewBuilder private func appearanceSection(_ node: MRNGNode) -> some View {

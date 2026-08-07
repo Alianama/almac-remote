@@ -197,6 +197,7 @@ struct TreeColumnView: View {
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var lang: LanguageManager
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         ZStack {
@@ -222,6 +223,12 @@ struct ContentView: View {
                         Image(systemName: "slider.horizontal.3")
                     }.help(t("Toolbar.EditSelected"))
                     .disabled(model.selectedNodeID == nil)
+                }
+                ToolbarItem(placement: .navigation) { Divider() }
+                ToolbarItemGroup(placement: .navigation) {
+                    Button { openWindow(id: "authenticator") } label: { Image(systemName: "key.fill") }
+                        .help(t("Authenticator.Open"))
+                        .keyboardShortcut("a", modifiers: [.command, .shift])
                 }
                 ToolbarItem(placement: .principal) {
                     if !model.sessions.isEmpty { PanelTabBar() }

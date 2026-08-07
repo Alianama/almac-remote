@@ -62,20 +62,17 @@ struct MRemoteApp: App {
                     .keyboardShortcut("-", modifiers: .command)
             }
             CommandMenu(t("Security.Menu")) {
-                Button(t("Security.LockNow")) { model.lockNow() }
+                Button { model.lockNow() } label: { Label(t("Security.LockNow"), systemImage: "lock.fill") }
                     .keyboardShortcut("l", modifiers: [.command, .control])
                     .disabled(!model.lockEnabled || model.isLocked)
                 Divider()
-                Button(t("Authenticator.Menu")) { openWindow(id: "authenticator") }
-                    .keyboardShortcut("a", modifiers: [.command, .shift])
-                Divider()
-                Toggle(t("Security.LockWhenIdle"), isOn: $model.lockEnabled)
-                Picker(t("Security.IdleTimeout"), selection: $model.idleLockMinutes) {
+                Toggle(isOn: $model.lockEnabled) { Label(t("Security.LockWhenIdle"), systemImage: "lock.badge.clock") }
+                Picker(selection: $model.idleLockMinutes) {
                     Text(t("Security.1Minute")).tag(1.0)
                     Text(t("Security.5Minutes")).tag(5.0)
                     Text(t("Security.15Minutes")).tag(15.0)
                     Text(t("Security.30Minutes")).tag(30.0)
-                }
+                } label: { Label(t("Security.IdleTimeout"), systemImage: "timer") }
                 .disabled(!model.lockEnabled)
             }
         }
