@@ -52,7 +52,19 @@ final class MRNGTerminalView: LocalProcessTerminalView {
     /// Notifies `TerminalContainer` when this specific pane gains keyboard focus —
     /// used to track which pane is focused when a tab is split into two.
     var onFocus: (() -> Void)?
+    /// Mirrors `TerminalContainer.isActive` — set on every `updateNSView` call.
+    /// Lets the app-reactivation handler below know whether *this* pane (vs. a
+    /// sibling split pane) is the one that should reclaim the keyboard.
+    var isActivePane = false
     private var mouseUpMonitor: Any?
+    /// Whether the current left-mouse-down/drag/up sequence started inside this
+    /// particular pane. With split panes, every pane's monitor fires for every
+    /// mouse event in the shared window (local monitors ignore hit-testing) —
+    /// without this gate, dragging in one pane also runs the neighbor's edge
+    /// check and spuriously starts its auto-scroll timer, and a selection that
+    /// ends past this pane's bounds (e.g. released over a divider) silently
+    /// fails to copy.
+    private var dragStartedInSelf = false
     private var autoScrollTimer: Timer?
     private var lastDragWindowLocation: NSPoint?
     /// > 0 = scroll DOWN (cursor below view, want newer content),
@@ -61,17 +73,21 @@ final class MRNGTerminalView: LocalProcessTerminalView {
     /// Re-applies blink animation after focus changes (SwiftTerm resets it in
     /// `becomeFirstResponder`).
     private var focusObserver: Any?
+    /// Reclaims the keyboard on app reactivation — see `installReactivationObserver`.
+    private var reactivationObserver: Any?
     private var currentBlinkSpeed: CursorBlinkSpeed = .medium
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         setupPuttyMouse()
         installFocusObserver()
+        installReactivationObserver()
     }
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         setupPuttyMouse()
         installFocusObserver()
+        installReactivationObserver()
     }
 
     private func setupPuttyMouse() {
@@ -90,18 +106,19 @@ final class MRNGTerminalView: LocalProcessTerminalView {
             switch event.type {
             case .leftMouseDown:
                 let pt = self.convert(event.locationInWindow, from: nil)
-                if self.bounds.contains(pt) { self.onFocus?() }
+                self.dragStartedInSelf = self.bounds.contains(pt)
+                if self.dragStartedInSelf { self.onFocus?() }
             case .leftMouseUp:
+                guard self.dragStartedInSelf else { return event }
+                self.dragStartedInSelf = false
                 self.stopAutoScroll()
-                if self.selectionActive {
-                    let pt = self.convert(event.locationInWindow, from: nil)
-                    if self.bounds.contains(pt),
-                       let text = self.getSelection(), !text.isEmpty {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(text, forType: .string)
-                    }
+                if self.selectionActive,
+                   let text = self.getSelection(), !text.isEmpty {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
                 }
             case .leftMouseDragged:
+                guard self.dragStartedInSelf else { return event }
                 self.handleDragForAutoScroll(event: event)
             default:
                 break
@@ -215,10 +232,29 @@ final class MRNGTerminalView: LocalProcessTerminalView {
         }
     }
 
+    /// SwiftUI only reclaims first responder from `TerminalContainer.updateNSView`,
+    /// which runs on state changes — not simply because the app regains focus.
+    /// After the app sits backgrounded for a while (another app in front, display
+    /// sleep, idle-lock) and is reactivated, the ssh process is still alive but
+    /// nothing re-asserts the terminal as first responder, so keystrokes go
+    /// nowhere until the user clicks the terminal. Re-claim it here instead.
+    private func installReactivationObserver() {
+        reactivationObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self, self.isActivePane, let window = self.window else { return }
+                if window.firstResponder is NSText { return } // user is typing in search etc.
+                if window.firstResponder !== self { window.makeFirstResponder(self) }
+            }
+        }
+    }
+
     deinit {
         autoScrollTimer?.invalidate()
         if let m = mouseUpMonitor { NSEvent.removeMonitor(m) }
         if let o = focusObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = reactivationObserver { NotificationCenter.default.removeObserver(o) }
     }
 }
 
@@ -347,6 +383,7 @@ struct TerminalContainer: NSViewRepresentable {
         context.coordinator.onFocus = onFocus
         term.applyCursorBlinkSpeed(cursorBlinkSpeed)
         startIfReady(term)
+        term.isActivePane = isActive
         // Give the terminal first responder status when its tab becomes active.
         guard isActive else { return }
         DispatchQueue.main.async {
