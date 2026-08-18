@@ -68,6 +68,10 @@ struct MRemoteApp: App {
                     .keyboardShortcut("d", modifiers: [.command, .shift])
                     .disabled(!model.canSplitSelectedSession(direction: .vertical))
             }
+            CommandMenu(t("Logs.Menu")) {
+                Button { openWindow(id: "logs") } label: { Label(t("Logs.Show"), systemImage: "doc.text.magnifyingglass") }
+                    .keyboardShortcut("l", modifiers: [.command, .shift])
+            }
             CommandMenu(t("Security.Menu")) {
                 Button { model.lockNow() } label: { Label(t("Security.LockNow"), systemImage: "lock.fill") }
                     .keyboardShortcut("l", modifiers: [.command, .control])
@@ -96,6 +100,11 @@ struct MRemoteApp: App {
             AuthenticatorWindowView()
                 .environmentObject(model)
                 .environmentObject(lang)
+        }
+        .windowResizability(.contentMinSize)
+
+        Window(t("Logs.Title"), id: "logs") {
+            LogsWindowView()
         }
         .windowResizability(.contentMinSize)
     }

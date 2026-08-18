@@ -232,3 +232,12 @@
 "Authenticator.Save" = "Zapisz";
 "Authenticator.Cancel" = "Anuluj";
 "Authenticator.CopyCode" = "Kopiuj kod";
+
+/* Logs: podglad app.log (aktywacja/fokus/zakonczenie procesu) */
+"Logs.Menu" = "Dzienniki";
+"Logs.Show" = "Pokaz dzienniki…";
+"Logs.Title" = "Dzienniki";
+"Logs.Empty" = "Brak wpisow.";
+"Logs.Reveal" = "Pokaz w Finderze";
+"Logs.Clear" = "Wyczysc";
+"Logs.Refresh" = "Odswiez";

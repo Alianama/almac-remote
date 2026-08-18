@@ -232,3 +232,12 @@
 "Authenticator.Save" = "Save";
 "Authenticator.Cancel" = "Cancel";
 "Authenticator.CopyCode" = "Copy code";
+
+/* Logs: in-app viewer for app.log (activation/focus/process-exit trail) */
+"Logs.Menu" = "Logs";
+"Logs.Show" = "Show Logs…";
+"Logs.Title" = "Logs";
+"Logs.Empty" = "No log entries yet.";
+"Logs.Reveal" = "Show in Finder";
+"Logs.Clear" = "Clear";
+"Logs.Refresh" = "Refresh";

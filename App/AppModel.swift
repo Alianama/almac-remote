@@ -97,7 +97,12 @@ final class AppModel: ObservableObject {
     }
     /// Which pane has keyboard focus within the selected tab — usually the same as
     /// `selectedSessionID`, but differs while a split tab's second pane is focused.
-    @Published var focusedSessionID: UUID?
+    @Published var focusedSessionID: UUID? {
+        didSet {
+            let id = focusedSessionID.map { String($0.uuidString.prefix(8)) } ?? "nil"
+            AppLog.log("focusedSessionID -> \(id)")
+        }
+    }
     @Published var selectedPanel: String? {
         didSet { persistSessionState() }
     }
@@ -199,6 +204,8 @@ final class AppModel: ObservableObject {
     @Published var isLocked: Bool = false
     @Published var lockAuthError: String?
     private var idleCheckTimer: Timer?
+    /// Polling fallback for terminal focus reclaim — see `installLifecycleLogging`.
+    private var focusWatchdogTimer: Timer?
     private var localActivityMonitor: Any?
     private var lastActivityDate = Date()
 
@@ -316,6 +323,78 @@ final class AppModel: ObservableObject {
             guard let self, self.isLocked else { return }
             self.authenticateToUnlock()
         }
+        installLifecycleLogging()
+    }
+
+    /// Coarse app/window activation trail in the Logs window — lets a user
+    /// correlate "I alt-tabbed back and couldn't type" against exactly which
+    /// notifications macOS actually sent, instead of having to reproduce the
+    /// issue live for a developer.
+    private func installLifecycleLogging() {
+        let center = NotificationCenter.default
+        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
+            center.addObserver(forName: name, object: nil, queue: .main) { note in
+                AppLog.log("app \(note.name.rawValue)")
+            }
+        }
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            center.addObserver(forName: name, object: nil, queue: .main) { note in
+                let title = (note.object as? NSWindow)?.title ?? "?"
+                AppLog.log("window \(note.name.rawValue) title=\(title)")
+            }
+        }
+        // Reclaim keyboard focus for the focused terminal pane on app/window
+        // reactivation. This used to be one NotificationCenter observer PER
+        // terminal pane, each gating on its own `isActivePane` flag mirrored
+        // from SwiftUI's `updateNSView` — logs showed that flag going stale
+        // under real use (rapid split-pane focus changes), silently skipping
+        // the reclaim with nothing to show for it. Centralizing here and
+        // reading `focusedSessionID` live (the actual source of truth, not a
+        // mirror of it) removes that whole class of race.
+        for name in [NSApplication.didBecomeActiveNotification, NSWindow.didBecomeKeyNotification] {
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.reclaimTerminalFocus()
+            }
+        }
+        // Belt-and-suspenders: logs showed real cases of the window resigning
+        // key repeatedly after Cmd-Tab back with neither didBecomeActive nor
+        // didBecomeKey ever firing again — so the observers above never ran at
+        // all. A cheap poll while the app is active catches that regardless of
+        // which (if any) notification macOS actually sends for a given reactivation.
+        focusWatchdogTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self, NSApp.isActive else { return }
+            self.reclaimTerminalFocus()
+        }
+    }
+
+    private func reclaimTerminalFocus() {
+        guard let id = focusedSessionID, let entry = TerminalViewRegistry.shared.existing(for: id) else { return }
+        let term = entry.term
+        guard let window = term.window else { return }
+        // Logs showed the pathological case: after Cmd-Tab back, the window
+        // resigns key repeatedly and NOTHING (recognizable) ever becomes key
+        // again. SwiftTerm's cursor renders hollow whenever `hasFocus` is
+        // false, and `hasFocus` requires `window.isKeyWindow` — so firstResponder
+        // can be correctly set and the cursor still shows hollow if the window
+        // itself never re-keys. Force that case by activating and bringing our
+        // window forward — but never when a different Almac window
+        // (Settings/Authenticator/Logs) is the one legitimately key, so we
+        // don't yank focus away from a field the user is actually typing in.
+        let auxWindowIDs: Set<String> = ["preferences", "authenticator", "logs"]
+        let keyIsAux = NSApp.keyWindow?.identifier.map { auxWindowIDs.contains($0.rawValue) } ?? false
+        if !keyIsAux {
+            if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
+            if !window.isKeyWindow { window.makeKeyAndOrderFront(nil) }
+        }
+        guard window.isKeyWindow else { return }
+        let cur = window.firstResponder.map { String(describing: $0) } ?? "nil"
+        if window.firstResponder is NSText {
+            AppLog.log("reclaim pane=\(term.debugLabel) skipped, firstResponder=\(cur) is NSText")
+            return
+        }
+        guard window.firstResponder !== term else { return }
+        let ok = window.makeFirstResponder(term)
+        AppLog.log("reclaim pane=\(term.debugLabel) firstResponder was \(cur), makeFirstResponder->\(ok)")
     }
 
     func zoomTerminal(_ delta: Double) {

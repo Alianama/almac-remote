@@ -234,3 +234,12 @@
 "Authenticator.Save" = "Salveaza";
 "Authenticator.Cancel" = "Anuleaza";
 "Authenticator.CopyCode" = "Copiaza codul";
+
+/* Logs: vizualizator pentru app.log (activare/focus/iesire proces) */
+"Logs.Menu" = "Jurnale";
+"Logs.Show" = "Arata jurnalele…";
+"Logs.Title" = "Jurnale";
+"Logs.Empty" = "Niciun jurnal inca.";
+"Logs.Reveal" = "Arata in Finder";
+"Logs.Clear" = "Sterge";
+"Logs.Refresh" = "Reincarca";
