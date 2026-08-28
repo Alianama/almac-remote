@@ -116,8 +116,15 @@ final class MRNGTerminalView: LocalProcessTerminalView {
             guard let self, event.window === self.window else { return event }
             switch event.type {
             case .leftMouseDown:
-                let pt = self.convert(event.locationInWindow, from: nil)
-                self.dragStartedInSelf = self.bounds.contains(pt)
+                // Every open tab's terminal stays mounted (and this monitor live) even
+                // while hidden in the background, stacked at the same frame as the
+                // visible one (see TerminalViewRegistry) — raw bounds-contains math
+                // can't tell them apart and both "claim" the same click, so focus
+                // ping-pongs onto whichever hidden pane's monitor fires last. A real
+                // hit-test respects the SwiftUI-driven hit-testing/opacity that
+                // actually distinguishes the visible pane from the hidden ones.
+                let hit = self.window?.contentView?.hitTest(event.locationInWindow)
+                self.dragStartedInSelf = hit === self || (hit?.isDescendant(of: self) ?? false)
                 if self.dragStartedInSelf { self.onFocus?() }
             case .leftMouseUp:
                 guard self.dragStartedInSelf else { return event }
