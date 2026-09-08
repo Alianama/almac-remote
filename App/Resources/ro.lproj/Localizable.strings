@@ -7,7 +7,10 @@
 "Toolbar.ExpandAll" = "Expandeaza tot";
 "Toolbar.CollapseAll" = "Restrange tot";
 "Toolbar.SortAlphabetical" = "Sorteaza alfabetic (conexiuni, apoi foldere)";
+"Toolbar.ShowHostnames" = "Arata nume de gazda/adrese IP";
+"Toolbar.ShowNames" = "Arata numele conexiunilor";
 "Toolbar.EditSelected" = "Editeaza conexiunea selectata...";
+"Toolbar.ChangeTheme" = "Schimba tema terminalului";
 
 /* Meniuri */
 "Menu.NewFile" = "Configuratie noua...";
@@ -49,6 +52,7 @@
 "Theme.Save" = "Salveaza";
 "Common.Close" = "Inchide";
 "Settings.RowHeight" = "Inaltime rand: %d";
+"Settings.TerminalScrollback" = "Istoric terminal: %d linii";
 "Settings.ShowProtocol" = "Arata tip protocol (RDP/SSH) in lista";
 "Settings.CloseTabOnDisconnect" = "Inchide tab-ul la deconectare (RDP)";
 "Settings.RestoreSessions" = "Redeschide conexiunile din sesiunea anterioara la pornire";
@@ -82,6 +86,7 @@
 
 /* Cautare sidebar */
 "Search.Placeholder" = "Cauta conexiuni";
+"Tree.DuplicateHostPort" = "Duplicat: o alta conexiune foloseste tot %@:%d";
 
 /* Placeholdere */
 "Placeholder.NoFile" = "Niciun fisier incarcat";
@@ -107,7 +112,7 @@
 "Editor.FolderSettings" = "Setari folder";
 "Editor.ConnectionSettings" = "Setari conexiune";
 "Editor.Discard" = "Renunta";
-"Editor.ApplyClose" = "Aplica si inchide";
+"Editor.ApplyClose" = "Aplica si salveaza";
 "Editor.Field.Name" = "Nume";
 "Editor.Field.Description" = "Descriere";
 "Editor.Field.Icon" = "Iconita";
@@ -236,6 +241,41 @@
 "Authenticator.CopyCode" = "Copiaza codul";
 
 /* Logs: vizualizator pentru app.log (activare/focus/iesire proces) */
+"AskAI.Menu" = "Intreaba AI";
+"AskAI.Title" = "Intreaba AI";
+"AskAI.Ask" = "Intreaba";
+"AskAI.Asking" = "Se intreaba…";
+"AskAI.NotFound" = "neinstalat";
+"AskAI.Placeholder" = "Raspunsul va aparea aici.";
+"AskAI.Hint" = "Foloseste CLI-ul Claude Code / Codex / Gemini instalat local si autentificat — fara cheie API.";
+"AskAI.NotInstalled" = "CLI-ul %@ nu a fost gasit. Instaleaza-l si autentifica-te, apoi incearca din nou.";
+"AskAI.ClearHistory" = "Sterge istoricul";
+"AskAI.InputPlaceholder" = "Pune o intrebare…";
+"AskAI.NewSession" = "Conversatie noua";
+"AskAI.Sessions" = "Istoric conversatii";
+"AskAI.DeleteSession" = "Sterge";
+"AskAI.NoSessions" = "Nicio conversatie anterioara.";
+"AskAI.AttachFile" = "Ataseaza un fisier";
+"AskAI.Stop" = "Opreste";
+"AskAI.CopyResponse" = "Copiaza raspunsul";
+"AskAI.FileTruncated" = "(trunchiat)";
+"Settings.AI" = "AI";
+"Settings.AIModelPlaceholder" = "Implicit";
+"Settings.AISetup" = "Configurare";
+"Settings.AIEnable" = "Activeaza %@";
+"Settings.AICLIPath" = "Cale CLI";
+"Settings.AICLIPathNote" = "Cale personalizata catre CLI-ul local. Lasa gol pentru detectare automata prin PATH si locatiile uzuale de instalare.";
+"Settings.AIModels" = "Modele";
+"Settings.AIDiscover" = "Descopera modele";
+"Settings.AIAddModel" = "Adauga acest model";
+"Settings.AIDiscoveryUnsupported" = "Nu s-a gasit cache local de modele pentru acest CLI — adauga modele manual mai jos.";
+"Settings.AISetDefault" = "Seteaza ca implicit";
+"Settings.AIModelIDPlaceholder" = "Model (ex. opus, gpt-5)";
+"Settings.AIModelAliasPlaceholder" = "Alias (optional)";
+"Settings.AIModelsNote" = "Modelul marcat cu steluta este transmis ca --model/-m. Fara steluta = modelul implicit al CLI-ului.";
+"Settings.AIEnvironment" = "Mediu";
+"Settings.AIEnvironmentNote" = "Variabile de mediu suplimentare pentru acest CLI, cate una CHEIE=VALOARE pe linie.";
+
 "Logs.Menu" = "Jurnale";
 "Logs.Show" = "Arata jurnalele…";
 "Logs.Title" = "Jurnale";

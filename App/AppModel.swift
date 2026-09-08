@@ -137,11 +137,22 @@ final class AppModel: ObservableObject {
     @Published var terminalTheme: String = "Implicit" {
         didSet { UserDefaults.standard.set(terminalTheme, forKey: "terminalTheme") }
     }
+    /// Drives the theme picker sheet from both the toolbar (quick access) and
+    /// the Settings > Appearance tab. Transient UI state — not persisted.
+    @Published var showThemePicker: Bool = false
     @Published var rowHeight: Double = 22 {
         didSet { UserDefaults.standard.set(rowHeight, forKey: "rowHeight") }
     }
+    /// Terminal scrollback line count (SwiftTerm defaults to 500).
+    @Published var terminalScrollback: Double = 5000 {
+        didSet { UserDefaults.standard.set(terminalScrollback, forKey: "terminalScrollback") }
+    }
     @Published var showProtocol: Bool = false {
         didSet { UserDefaults.standard.set(showProtocol, forKey: "showProtocol") }
+    }
+    /// Sidebar tree shows each connection's hostname/IP instead of its name.
+    @Published var sidebarShowsHostname: Bool = false {
+        didSet { UserDefaults.standard.set(sidebarShowsHostname, forKey: "sidebarShowsHostname") }
     }
     @Published var showPasswordPlain: Bool = false {
         didSet { UserDefaults.standard.set(showPasswordPlain, forKey: "showPasswordPlain") }
@@ -157,6 +168,122 @@ final class AppModel: ObservableObject {
     // the app launching into an empty, input-blocking sheet (isPresented=true,
     // no node to show). Always start closed.
     @Published var editorVisible: Bool = false
+    /// Set right before `editorVisible` when opening the editor for a
+    /// brand-new (never-saved) connection, so its Discard button can delete
+    /// the node instead of just reverting attribute edits on it.
+    @Published var editingIsNewConnection: Bool = false
+    @Published var showAskAI: Bool = false
+    /// User-draggable width of the Ask AI panel, like the sidebar's own resize handle.
+    @Published var askAIPanelWidth: Double = 360 {
+        didSet { UserDefaults.standard.set(askAIPanelWidth, forKey: "askAIPanelWidth") }
+    }
+    /// Which installed AI CLI "Ask AI" shells out to for the next message.
+    @Published var aiProvider: AIProvider = .claude {
+        didSet { UserDefaults.standard.set(aiProvider.rawValue, forKey: "aiProvider") }
+    }
+    /// Providers offered in the picker/settings — disabling one hides it
+    /// without touching whether its CLI is actually installed.
+    @Published var aiEnabledProviders: Set<AIProvider> = Set(AIProvider.allCases) {
+        didSet {
+            UserDefaults.standard.set(aiEnabledProviders.map(\.rawValue), forKey: "aiEnabledProviders")
+            if !aiEnabledProviders.contains(aiProvider), let fallback = aiEnabledProviders.first {
+                aiProvider = fallback
+            }
+        }
+    }
+    /// Per-provider override for the CLI binary to run (empty = auto-detect
+    /// via PATH / common install dirs, see `AIAssistant.binaryPath`).
+    @Published var aiCLIPathOverrides: [String: String] = [:] {
+        didSet { UserDefaults.standard.set(aiCLIPathOverrides, forKey: "aiCLIPathOverrides") }
+    }
+    func aiCLIPath(for provider: AIProvider) -> String { aiCLIPathOverrides[provider.rawValue] ?? "" }
+    func setAICLIPath(_ path: String, for provider: AIProvider) { aiCLIPathOverrides[provider.rawValue] = path }
+
+    /// Per-provider extra environment variables, kept as raw "KEY=VALUE"
+    /// lines (one per line) so the Settings text box round-trips exactly
+    /// what the user typed, including a line they're still editing.
+    @Published var aiEnvironmentText: [String: String] = [:] {
+        didSet { UserDefaults.standard.set(aiEnvironmentText, forKey: "aiEnvironmentText") }
+    }
+    func aiEnvironmentText(for provider: AIProvider) -> String { aiEnvironmentText[provider.rawValue] ?? "" }
+    func setAIEnvironmentText(_ text: String, for provider: AIProvider) { aiEnvironmentText[provider.rawValue] = text }
+    /// Parses that provider's environment text into a dictionary — blank
+    /// lines, comments ("#...") and lines without "=" are ignored.
+    func aiEnvironment(for provider: AIProvider) -> [String: String] {
+        var out: [String: String] = [:]
+        for line in aiEnvironmentText(for: provider).split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, !trimmed.hasPrefix("#"), let eq = trimmed.firstIndex(of: "=") else { continue }
+            let key = String(trimmed[trimmed.startIndex..<eq]).trimmingCharacters(in: .whitespaces)
+            guard !key.isEmpty else { continue }
+            out[key] = String(trimmed[trimmed.index(after: eq)...]).trimmingCharacters(in: .whitespaces)
+        }
+        return out
+    }
+
+    /// Configured `--model`/`-m` choices per provider (add/remove in
+    /// Settings) — keyed by `AIProvider.rawValue`.
+    @Published var aiModelEntries: [String: [AIModelEntry]] = [:] {
+        didSet { saveAIModelEntries() }
+    }
+    /// Which entry's `modelID` is the default for a provider. Empty means
+    /// "no --model flag" — let that CLI use its own account default.
+    @Published var aiDefaultModelID: [String: String] = [:] {
+        didSet { UserDefaults.standard.set(aiDefaultModelID, forKey: "aiDefaultModelID") }
+    }
+    func models(for provider: AIProvider) -> [AIModelEntry] { aiModelEntries[provider.rawValue] ?? [] }
+    func setModels(_ entries: [AIModelEntry], for provider: AIProvider) { aiModelEntries[provider.rawValue] = entries }
+    func defaultModelID(for provider: AIProvider) -> String { aiDefaultModelID[provider.rawValue] ?? "" }
+    func setDefaultModel(_ modelID: String, for provider: AIProvider) { aiDefaultModelID[provider.rawValue] = modelID }
+
+    /// "Ask AI" conversation threads — the panel can hold several and switch
+    /// between them (all persisted).
+    @Published var aiChatSessions: [AIChatSession] = [] {
+        didSet { saveAIChatSessions() }
+    }
+    @Published var activeAIChatSessionID: UUID? {
+        didSet { UserDefaults.standard.set(activeAIChatSessionID?.uuidString, forKey: "activeAIChatSessionID") }
+    }
+    var activeAIChatSession: AIChatSession? {
+        aiChatSessions.first { $0.id == activeAIChatSessionID }
+    }
+    /// Returns the id of a valid active session, creating one if none exists yet.
+    @discardableResult
+    func ensureActiveAIChatSession() -> UUID {
+        if let id = activeAIChatSessionID, aiChatSessions.contains(where: { $0.id == id }) { return id }
+        return newAIChatSession()
+    }
+    @discardableResult
+    func newAIChatSession() -> UUID {
+        let session = AIChatSession()
+        aiChatSessions.insert(session, at: 0)
+        activeAIChatSessionID = session.id
+        return session.id
+    }
+    func deleteAIChatSession(_ id: UUID) {
+        aiChatSessions.removeAll { $0.id == id }
+        if activeAIChatSessionID == id {
+            activeAIChatSessionID = aiChatSessions.first?.id
+        }
+    }
+    func appendAIChatMessage(_ message: AIChatMessage, toSession id: UUID) {
+        guard let idx = aiChatSessions.firstIndex(where: { $0.id == id }) else { return }
+        aiChatSessions[idx].messages.append(message)
+        aiChatSessions[idx].updatedAt = Date()
+        if aiChatSessions[idx].title.isEmpty, message.role == .user {
+            aiChatSessions[idx].title = String(message.text.prefix(40))
+        }
+    }
+    /// That provider's own conversation id for this chat thread, if any turn
+    /// has happened yet — passed back as `--resume` so the next message
+    /// continues with context instead of starting over.
+    func providerSessionToken(for provider: AIProvider, sessionID: UUID) -> String? {
+        aiChatSessions.first(where: { $0.id == sessionID })?.providerSessionTokens[provider.rawValue]
+    }
+    func setProviderSessionToken(_ token: String?, for provider: AIProvider, sessionID: UUID) {
+        guard let token, let idx = aiChatSessions.firstIndex(where: { $0.id == sessionID }) else { return }
+        aiChatSessions[idx].providerSessionTokens[provider.rawValue] = token
+    }
     @Published var closeTabOnDisconnect: Bool = false {
         didSet { UserDefaults.standard.set(closeTabOnDisconnect, forKey: "closeTabOnDisconnect") }
     }
@@ -286,7 +413,11 @@ final class AppModel: ObservableObject {
         if let v = UserDefaults.standard.object(forKey: "terminalFontSize") as? Double { terminalFontSize = v }
         if let v = UserDefaults.standard.string(forKey: "terminalTheme") { terminalTheme = v }
         if let v = UserDefaults.standard.object(forKey: "rowHeight") as? Double { rowHeight = v }
+        if let v = UserDefaults.standard.object(forKey: "terminalScrollback") as? Double { terminalScrollback = v }
+        if let v = UserDefaults.standard.object(forKey: "askAIPanelWidth") as? Double { askAIPanelWidth = v }
+        if let v = UserDefaults.standard.string(forKey: "aiProvider"), let p = AIProvider(rawValue: v) { aiProvider = p }
         if let v = UserDefaults.standard.object(forKey: "showProtocol") as? Bool { showProtocol = v }
+        if let v = UserDefaults.standard.object(forKey: "sidebarShowsHostname") as? Bool { sidebarShowsHostname = v }
         if let v = UserDefaults.standard.object(forKey: "showPasswordPlain") as? Bool { showPasswordPlain = v }
         if let v = UserDefaults.standard.string(forKey: "cursorBlinkSpeed"),
            let s = CursorBlinkSpeed(rawValue: v) { cursorBlinkSpeed = s }
@@ -301,6 +432,7 @@ final class AppModel: ObservableObject {
         loadTools()
         loadCustomThemes()
         loadAuthenticatorEntries()
+        loadAIChatState()
         // Auto-reopen the last file used (if it still exists on disk).
         if let saved = UserDefaults.standard.string(forKey: "lastOpenedFile"),
            FileManager.default.fileExists(atPath: saved) {
@@ -368,9 +500,19 @@ final class AppModel: ObservableObject {
     }
 
     private func reclaimTerminalFocus() {
-        guard let id = focusedSessionID, let entry = TerminalViewRegistry.shared.existing(for: id) else { return }
-        let term = entry.term
-        guard let window = term.window else { return }
+        guard let id = focusedSessionID else { return }
+        // RDP panes have the exact same backgrounding/reclaim problem terminal
+        // panes did — they just weren't covered by the original fix because
+        // they live in `RDPViewRegistry`, not `TerminalViewRegistry`.
+        if let entry = TerminalViewRegistry.shared.existing(for: id) {
+            reclaimFocus(for: entry.term, label: entry.term.debugLabel)
+        } else if let rdpView = RDPViewRegistry.shared.existing(for: id) {
+            reclaimFocus(for: rdpView, label: "rdp-\(id.uuidString.prefix(8))")
+        }
+    }
+
+    private func reclaimFocus(for view: NSView, label: String) {
+        guard let window = view.window else { return }
         // Logs showed the pathological case: after Cmd-Tab back, the window
         // resigns key repeatedly and NOTHING (recognizable) ever becomes key
         // again. SwiftTerm's cursor renders hollow whenever `hasFocus` is
@@ -389,12 +531,12 @@ final class AppModel: ObservableObject {
         guard window.isKeyWindow else { return }
         let cur = window.firstResponder.map { String(describing: $0) } ?? "nil"
         if window.firstResponder is NSText {
-            AppLog.log("reclaim pane=\(term.debugLabel) skipped, firstResponder=\(cur) is NSText")
+            AppLog.log("reclaim pane=\(label) skipped, firstResponder=\(cur) is NSText")
             return
         }
-        guard window.firstResponder !== term else { return }
-        let ok = window.makeFirstResponder(term)
-        AppLog.log("reclaim pane=\(term.debugLabel) firstResponder was \(cur), makeFirstResponder->\(ok)")
+        guard window.firstResponder !== view else { return }
+        let ok = window.makeFirstResponder(view)
+        AppLog.log("reclaim pane=\(label) firstResponder was \(cur), makeFirstResponder->\(ok)")
     }
 
     func zoomTerminal(_ delta: Double) {
@@ -570,6 +712,53 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func loadAIChatState() {
+        if let data = UserDefaults.standard.data(forKey: "aiChatSessions"),
+           let sessions = try? JSONDecoder().decode([AIChatSession].self, from: data) {
+            aiChatSessions = sessions
+        }
+        if let idString = UserDefaults.standard.string(forKey: "activeAIChatSessionID"),
+           let id = UUID(uuidString: idString), aiChatSessions.contains(where: { $0.id == id }) {
+            activeAIChatSessionID = id
+        } else {
+            activeAIChatSessionID = aiChatSessions.first?.id
+        }
+        if let raw = UserDefaults.standard.array(forKey: "aiEnabledProviders") as? [String] {
+            let enabled = Set(raw.compactMap(AIProvider.init(rawValue:)))
+            if !enabled.isEmpty { aiEnabledProviders = enabled }
+        }
+        if let overrides = UserDefaults.standard.dictionary(forKey: "aiCLIPathOverrides") as? [String: String] {
+            aiCLIPathOverrides = overrides
+        }
+        if let env = UserDefaults.standard.dictionary(forKey: "aiEnvironmentText") as? [String: String] {
+            aiEnvironmentText = env
+        }
+        if let defaults = UserDefaults.standard.dictionary(forKey: "aiDefaultModelID") as? [String: String] {
+            aiDefaultModelID = defaults
+        }
+        if let data = UserDefaults.standard.data(forKey: "aiModelEntries"),
+           let entries = try? JSONDecoder().decode([String: [AIModelEntry]].self, from: data) {
+            aiModelEntries = entries
+        } else {
+            // First run — seed Claude with its current published model catalog.
+            // Codex/Gemini have no catalog this app can verify, so they start
+            // empty; the user adds whichever models their account offers.
+            aiModelEntries = [AIProvider.claude.rawValue: AIProvider.seedClaudeModels()]
+        }
+    }
+
+    private func saveAIChatSessions() {
+        if let data = try? JSONEncoder().encode(aiChatSessions) {
+            UserDefaults.standard.set(data, forKey: "aiChatSessions")
+        }
+    }
+
+    private func saveAIModelEntries() {
+        if let data = try? JSONEncoder().encode(aiModelEntries) {
+            UserDefaults.standard.set(data, forKey: "aiModelEntries")
+        }
+    }
+
     /// Decrypted password for this connection's SSH jump host (ProxyJump), or "".
     func decryptedProxyJumpPassword(for node: MRNGNode) -> String {
         let enc = node.encryptedProxyJumpPassword
@@ -606,6 +795,11 @@ final class AppModel: ObservableObject {
     func addConnection() {
         let node = MRNGNode.makeConnection(name: t("Connection.NewConnectionName"))
         insertNew(node)
+        // Skip inline tree rename in favor of jumping straight to the full
+        // editor (hostname, credentials, etc.) — same sheet as "Edit...".
+        renamingNodeID = nil
+        editingIsNewConnection = true
+        editorVisible = true
     }
 
     func addFolder() {
@@ -788,6 +982,10 @@ final class AppModel: ObservableObject {
     /// Opens a plain local shell tab (like Terminal.app) — no remote host involved.
     func openLocalTerminal() {
         let node = MRNGNode.makeConnection(name: t("Terminal.LocalTitle"), protocolType: "LocalShell")
+        // Not a bundled icon name on purpose — falls through NodeIconView to the
+        // SF Symbol fallback (a plain terminal/cmd glyph) instead of reusing the
+        // generic "Linux" PNG every SSH-to-a-Linux-host connection also shows.
+        node.attributes["Icon"] = "Local Terminal"
         let session = Session(title: node.name, kind: .localShell, node: node, password: "",
                               panel: selectedPanel ?? "General")
         sessions.append(session)
@@ -877,6 +1075,14 @@ final class AppModel: ObservableObject {
     /// Kinds where an interactive shell makes sense to split — not RDP/HTTP/GUI sessions.
     private static let splittableKinds: Set<Session.Kind> = [.ssh, .telnet, .sftp, .externalTool, .localShell]
     static let maxSplitPanes = 6
+
+    /// Whether the selected session's kind can ever be split — used to hide
+    /// (not just disable) the split buttons for kinds like RDP where splitting
+    /// never makes sense.
+    var selectedSessionIsSplittable: Bool {
+        guard let id = selectedSessionID, let s = sessions.first(where: { $0.id == id }) else { return false }
+        return Self.splittableKinds.contains(s.kind)
+    }
 
     /// Whether the selected tab can gain another pane in `direction`. Once a tab
     /// is split, its direction is locked in — the other direction's button stays
@@ -1215,6 +1421,23 @@ final class AppModel: ObservableObject {
         }
         doc.roots.forEach { emit($0, depth: 0) }
         return out
+    }
+
+    /// "hostname:port" keys (lowercased hostname) shared by more than one
+    /// connection — used to flag likely-duplicate connections in the sidebar.
+    /// Empty hostnames are excluded (an unconfigured connection isn't a
+    /// "duplicate" of another unconfigured one).
+    // ponytail: rescans the whole tree per call — O(n) here, O(n²) if every
+    // row in the sidebar calls it independently on every render. Fine for
+    // typical connection-tree sizes (tens to low hundreds); cache by
+    // `treeVersion` in AppModel if this ever needs to scale to thousands.
+    func duplicateHostPortKeys() -> Set<String> {
+        guard let doc else { return [] }
+        var counts: [String: Int] = [:]
+        for node in doc.allNodes() where !node.isContainer && !node.hostname.isEmpty {
+            counts["\(node.hostname.lowercased()):\(node.port)", default: 0] += 1
+        }
+        return Set(counts.filter { $0.value > 1 }.keys)
     }
 
     func toggleExpanded(_ id: String) {

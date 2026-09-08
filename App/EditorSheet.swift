@@ -11,6 +11,11 @@ import MRNGCore
 struct EditorSheet: View {
     @EnvironmentObject var model: AppModel
     let nodeID: String
+    /// True when this sheet opened right after creating a brand-new connection
+    /// (vs. editing an existing one) — Discard then deletes the node instead
+    /// of just reverting its attributes, so an abandoned "New connection" is
+    /// never persisted.
+    var isNew: Bool = false
 
     enum Category: String, CaseIterable, Identifiable {
         case general, connection, credentials, appearance, advanced
@@ -167,6 +172,17 @@ struct EditorSheet: View {
             Picker("", selection: attr(node, "Protocol", inherit: "InheritProtocol")) {
                 ForEach(protocols, id: \.self) { Text($0).tag($0) }
             }.labelsHidden().frame(width: 140)
+                .onChange(of: node.protocolType) { _, newProto in
+                    node.attributes["Port"] = MRNGNode.defaultPortString(for: newProto)
+                    node.attributes["InheritPort"] = "false"
+                    if newProto == "HTTP" || newProto == "HTTPS" {
+                        // Not a bundled icon name on purpose — falls through to
+                        // the SF Symbol fallback (a browser glyph) in `protocolIcon`.
+                        node.attributes["Icon"] = "Browser"
+                        node.attributes["InheritIcon"] = "false"
+                    }
+                    model.markDirty()
+                }
             label(t("Editor.Field.Port")).frame(width: 40, alignment: .trailing)
             TextField("", text: attr(node, "Port", inherit: "InheritPort"))
                 .textFieldStyle(.roundedBorder).frame(width: 80)
@@ -354,14 +370,20 @@ struct EditorSheet: View {
     }
 
     private func discard() {
-        if let node {
+        if isNew, let node {
+            // Never-saved connection — abandon it entirely rather than just
+            // reverting its attributes (which would still leave it in the tree).
+            model.deleteNode(node)
+        } else if let node {
             node.attributes = snapshot
             model.treeVersion &+= 1
-            // A debounced auto-save may have already written the now-discarded
-            // edits to disk — cancel it and force a fresh save of the reverted state.
-            model.cancelPendingAutoSave()
-            model.save()
         }
+        // A debounced auto-save may have already written the now-discarded
+        // edits (or the new node itself) to disk — cancel it and force a
+        // fresh save reflecting the reverted/removed state.
+        model.cancelPendingAutoSave()
+        model.save()
+        model.editingIsNewConnection = false
         model.editorVisible = false
     }
 
@@ -370,6 +392,7 @@ struct EditorSheet: View {
         // instead of waiting for the debounced auto-save to catch up.
         model.cancelPendingAutoSave()
         model.save()
+        model.editingIsNewConnection = false
         model.editorVisible = false
     }
 

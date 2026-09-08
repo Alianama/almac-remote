@@ -55,6 +55,9 @@ final class MRNGTerminalView: LocalProcessTerminalView {
     /// Short id (first 8 chars of the session UUID) for correlating this
     /// pane's activity across log lines — see `AppLog`.
     var debugLabel = "?"
+    /// Scrollback line count last applied via `changeScrollback`, so
+    /// `updateNSView` only re-applies it when the Settings value actually changes.
+    var appliedScrollback = -1
     private var mouseUpMonitor: Any?
     /// Whether the current left-mouse-down/drag/up sequence started inside this
     /// particular pane. With split panes, every pane's monitor fires for every
@@ -310,6 +313,7 @@ struct TerminalContainer: NSViewRepresentable {
     let fontSize: Double
     var theme: String = "Implicit"
     var cursorBlinkSpeed: CursorBlinkSpeed = .medium
+    var scrollback: Double = 5000
     /// Called when the underlying terminal reports a new title via OSC 0/1/2.
     /// AppModel uses it to rename the SwiftUI tab live (e.g. `user@host:cwd`).
     var onTitleChange: (String) -> Void = { _ in }
@@ -335,6 +339,10 @@ struct TerminalContainer: NSViewRepresentable {
             return existing.container
         }
         let term = MRNGTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 480))
+        // SwiftTerm defaults to a 500-line scrollback; use the Settings value instead.
+        let scrollbackLines = Int(scrollback)
+        term.getTerminal().changeScrollback(scrollbackLines)
+        term.appliedScrollback = scrollbackLines
         term.debugLabel = String(session.id.uuidString.prefix(8))
         term.font = NSFont.monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .regular)
         TerminalThemes.apply(theme, to: term)
@@ -372,7 +380,11 @@ struct TerminalContainer: NSViewRepresentable {
         guard !term.started, session.proxyState != .connecting else { return }
         term.started = true
         let (exe, args) = Self.command(for: session)
-        term.startProcess(executable: exe, args: args, environment: nil, execName: nil)
+        // Only the local shell has a meaningful "starting folder" — ssh/telnet
+        // etc. connect to a remote host regardless of the app's own cwd, which
+        // otherwise defaults to wherever the app happened to launch from.
+        let cwd = session.kind == .localShell ? NSHomeDirectory() : nil
+        term.startProcess(executable: exe, args: args, environment: nil, execName: nil, currentDirectory: cwd)
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
@@ -383,6 +395,11 @@ struct TerminalContainer: NSViewRepresentable {
         }
         TerminalThemes.apply(theme, to: term)
         nsView.layer?.backgroundColor = term.nativeBackgroundColor.cgColor
+        let desiredScrollback = Int(scrollback)
+        if term.appliedScrollback != desiredScrollback {
+            term.getTerminal().changeScrollback(desiredScrollback)
+            term.appliedScrollback = desiredScrollback
+        }
         context.coordinator.onTitleChange = onTitleChange
         context.coordinator.onFocus = onFocus
         term.applyCursorBlinkSpeed(cursorBlinkSpeed)

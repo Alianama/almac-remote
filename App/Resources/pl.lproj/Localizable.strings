@@ -7,7 +7,10 @@
 "Toolbar.ExpandAll" = "Rozwiń wszystko";
 "Toolbar.CollapseAll" = "Zwiń wszystko";
 "Toolbar.SortAlphabetical" = "Sortuj alfabetycznie (najpierw połączenia, potem foldery)";
+"Toolbar.ShowHostnames" = "Pokaż nazwy hostów/adresy IP";
+"Toolbar.ShowNames" = "Pokaż nazwy połączeń";
 "Toolbar.EditSelected" = "Edytuj wybrane połączenie...";
+"Toolbar.ChangeTheme" = "Zmień motyw terminala";
 
 /* Menus */
 "Menu.About" = "O programie Almac Remote";
@@ -51,6 +54,7 @@
 "Theme.Save" = "Zapisz";
 "Common.Close" = "Zamknij";
 "Settings.RowHeight" = "Wysokość wiersza: %d";
+"Settings.TerminalScrollback" = "Historia terminala: %d linii";
 "Settings.ShowProtocol" = "Pokaż typ protokołu (RDP/SSH) na liście";
 "Settings.CloseTabOnDisconnect" = "Zamknij kartę po rozłączeniu (RDP)";
 "Settings.RestoreSessions" = "Otwórz ponownie połączenia z poprzedniej sesji przy starcie";
@@ -84,6 +88,7 @@
 
 /* Sidebar search */
 "Search.Placeholder" = "Szukaj połączeń";
+"Tree.DuplicateHostPort" = "Duplikat: inne połączenie również używa %@:%d";
 
 /* Placeholders */
 "Placeholder.NoFile" = "Nie załadowano pliku";
@@ -109,7 +114,7 @@
 "Editor.FolderSettings" = "Ustawienia folderu";
 "Editor.ConnectionSettings" = "Ustawienia połączenia";
 "Editor.Discard" = "Odrzuć";
-"Editor.ApplyClose" = "Zastosuj i zamknij";
+"Editor.ApplyClose" = "Zastosuj i zapisz";
 "Editor.Field.Name" = "Nazwa";
 "Editor.Field.Description" = "Opis";
 "Editor.Field.Icon" = "Ikona";
@@ -234,6 +239,41 @@
 "Authenticator.CopyCode" = "Kopiuj kod";
 
 /* Logs: podglad app.log (aktywacja/fokus/zakonczenie procesu) */
+"AskAI.Menu" = "Zapytaj AI";
+"AskAI.Title" = "Zapytaj AI";
+"AskAI.Ask" = "Zapytaj";
+"AskAI.Asking" = "Pytanie…";
+"AskAI.NotFound" = "niezainstalowane";
+"AskAI.Placeholder" = "Odpowiedź pojawi się tutaj.";
+"AskAI.Hint" = "Używa lokalnie zainstalowanego i zalogowanego CLI Claude Code / Codex / Gemini — bez klucza API.";
+"AskAI.NotInstalled" = "Nie znaleziono CLI %@. Zainstaluj i zaloguj się, a następnie spróbuj ponownie.";
+"AskAI.ClearHistory" = "Wyczyść historię";
+"AskAI.InputPlaceholder" = "Zadaj pytanie…";
+"AskAI.NewSession" = "Nowa rozmowa";
+"AskAI.Sessions" = "Historia rozmów";
+"AskAI.DeleteSession" = "Usuń";
+"AskAI.NoSessions" = "Brak wcześniejszych rozmów.";
+"AskAI.AttachFile" = "Załącz plik";
+"AskAI.Stop" = "Zatrzymaj";
+"AskAI.CopyResponse" = "Kopiuj odpowiedź";
+"AskAI.FileTruncated" = "(skrócono)";
+"Settings.AI" = "AI";
+"Settings.AIModelPlaceholder" = "Domyślny";
+"Settings.AISetup" = "Konfiguracja";
+"Settings.AIEnable" = "Włącz %@";
+"Settings.AICLIPath" = "Ścieżka CLI";
+"Settings.AICLIPathNote" = "Niestandardowa ścieżka do lokalnego CLI. Zostaw puste, aby wykryć automatycznie przez PATH i typowe lokalizacje instalacji.";
+"Settings.AIModels" = "Modele";
+"Settings.AIDiscover" = "Wykryj modele";
+"Settings.AIAddModel" = "Dodaj ten model";
+"Settings.AIDiscoveryUnsupported" = "Nie znaleziono lokalnej pamięci podręcznej modeli dla tego CLI — dodaj modele ręcznie poniżej.";
+"Settings.AISetDefault" = "Ustaw jako domyślny";
+"Settings.AIModelIDPlaceholder" = "Model (np. opus, gpt-5)";
+"Settings.AIModelAliasPlaceholder" = "Alias (opcjonalnie)";
+"Settings.AIModelsNote" = "Zaznaczony gwiazdką model jest przekazywany jako --model/-m. Brak gwiazdki = domyślny model tego CLI.";
+"Settings.AIEnvironment" = "Środowisko";
+"Settings.AIEnvironmentNote" = "Dodatkowe zmienne środowiskowe dla tego CLI, jedna KLUCZ=WARTOŚĆ na linię.";
+
 "Logs.Menu" = "Dzienniki";
 "Logs.Show" = "Pokaz dzienniki…";
 "Logs.Title" = "Dzienniki";

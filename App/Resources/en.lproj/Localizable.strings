@@ -7,7 +7,10 @@
 "Toolbar.ExpandAll" = "Expand all";
 "Toolbar.CollapseAll" = "Collapse all";
 "Toolbar.SortAlphabetical" = "Sort alphabetically (connections, then folders)";
+"Toolbar.ShowHostnames" = "Show hostnames/IP addresses";
+"Toolbar.ShowNames" = "Show connection names";
 "Toolbar.EditSelected" = "Edit selected connection...";
+"Toolbar.ChangeTheme" = "Change terminal theme";
 
 /* Menus */
 "Menu.About" = "About Almac Remote";
@@ -51,6 +54,7 @@
 "Theme.Save" = "Save";
 "Common.Close" = "Close";
 "Settings.RowHeight" = "Row height: %d";
+"Settings.TerminalScrollback" = "Terminal scrollback: %d lines";
 "Settings.ShowProtocol" = "Show protocol type (RDP/SSH) in list";
 "Settings.CloseTabOnDisconnect" = "Close tab on disconnect (RDP)";
 "Settings.RestoreSessions" = "Reopen last session's connections on launch";
@@ -84,6 +88,7 @@
 
 /* Sidebar search */
 "Search.Placeholder" = "Search connections";
+"Tree.DuplicateHostPort" = "Duplicate: another connection also uses %@:%d";
 
 /* Placeholders */
 "Placeholder.NoFile" = "No file loaded";
@@ -109,7 +114,7 @@
 "Editor.FolderSettings" = "Folder settings";
 "Editor.ConnectionSettings" = "Connection settings";
 "Editor.Discard" = "Discard";
-"Editor.ApplyClose" = "Apply and close";
+"Editor.ApplyClose" = "Apply & Save";
 "Editor.Field.Name" = "Name";
 "Editor.Field.Description" = "Description";
 "Editor.Field.Icon" = "Icon";
@@ -232,6 +237,43 @@
 "Authenticator.Save" = "Save";
 "Authenticator.Cancel" = "Cancel";
 "Authenticator.CopyCode" = "Copy code";
+
+/* Ask AI: shells out to a locally installed, already-logged-in AI CLI
+   (Claude Code / Codex / Gemini) — no API key stored by this app. */
+"AskAI.Menu" = "Ask AI";
+"AskAI.Title" = "Ask AI";
+"AskAI.Ask" = "Ask";
+"AskAI.Asking" = "Asking…";
+"AskAI.NotFound" = "not installed";
+"AskAI.Placeholder" = "Response will appear here.";
+"AskAI.Hint" = "Uses your locally installed Claude Code / Codex / Gemini CLI login — no API key needed.";
+"AskAI.NotInstalled" = "%@ CLI not found. Install it and sign in, then try again.";
+"AskAI.ClearHistory" = "Clear history";
+"AskAI.InputPlaceholder" = "Ask a question…";
+"AskAI.NewSession" = "New chat";
+"AskAI.Sessions" = "Chat history";
+"AskAI.DeleteSession" = "Delete";
+"AskAI.NoSessions" = "No previous chats yet.";
+"AskAI.AttachFile" = "Attach a file";
+"AskAI.Stop" = "Stop";
+"AskAI.CopyResponse" = "Copy response";
+"AskAI.FileTruncated" = "(truncated)";
+"Settings.AI" = "AI";
+"Settings.AIModelPlaceholder" = "Default";
+"Settings.AISetup" = "Setup";
+"Settings.AIEnable" = "Enable %@";
+"Settings.AICLIPath" = "CLI path";
+"Settings.AICLIPathNote" = "Custom path to the local CLI. Leave empty to auto-detect via PATH and common install locations.";
+"Settings.AIModels" = "Models";
+"Settings.AIDiscover" = "Discover models";
+"Settings.AIAddModel" = "Add this model";
+"Settings.AIDiscoveryUnsupported" = "No local model cache found for this CLI — add models manually below.";
+"Settings.AISetDefault" = "Set as default";
+"Settings.AIModelIDPlaceholder" = "Model (e.g. opus, gpt-5)";
+"Settings.AIModelAliasPlaceholder" = "Alias (optional)";
+"Settings.AIModelsNote" = "The starred model is passed as --model/-m. None starred = that CLI's own default.";
+"Settings.AIEnvironment" = "Environment";
+"Settings.AIEnvironmentNote" = "Extra environment variables for this CLI, one KEY=VALUE per line.";
 
 /* Logs: in-app viewer for app.log (activation/focus/process-exit trail) */
 "Logs.Menu" = "Logs";

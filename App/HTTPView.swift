@@ -42,6 +42,26 @@ final class HTTPSWebView: WKWebView, WKNavigationDelegate {
         injectAutofill()
     }
 
+    /// Without this, a failed load (wrong port, host unreachable, refused
+    /// connection, ...) just leaves WKWebView's blank white default on
+    /// screen with no indication anything went wrong.
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        showLoadError(error)
+    }
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        showLoadError(error)
+    }
+    private func showLoadError(_ error: Error) {
+        let nsError = error as NSError
+        // -999 = a navigation was superseded by another (e.g. a redirect or a
+        // second `load` call) — not a real failure, so don't flash an error page.
+        guard !(nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled) else { return }
+        let message = nsError.localizedDescription
+        loadHTMLString(
+            "<html><body style=\"font: -apple-system-body; padding:2em; color: #888;\">\(message)</body></html>",
+            baseURL: nil)
+    }
+
     /// Detects the first <input type="password"> and the nearest user field;
     /// fills the values and dispatches input/change events so JS frameworks
     /// (React/Vue) "see" the change. Does NOT auto-submit.

@@ -266,8 +266,8 @@ if [ "$SIGN_MODE" = "developer-id" ]; then
     cat > "$DMG_STAGE/INSTALL.txt" <<EOF
 Almac Remote — install
 
-1. Drag AlmacRemote.app into the Applications folder shortcut.
-2. Open AlmacRemote.app from /Applications.
+1. Drag $APP_NAME.app into the Applications folder shortcut.
+2. Open $APP_NAME.app from /Applications.
 
 The app is signed and notarized by Apple — no Gatekeeper warning.
 
@@ -278,13 +278,13 @@ else
     cat > "$DMG_STAGE/INSTALL.txt" <<EOF
 Almac Remote — install
 
-1. Drag AlmacRemote.app into the Applications folder shortcut.
+1. Drag $APP_NAME.app into the Applications folder shortcut.
 2. The first launch shows a Gatekeeper warning because the app is
    ad-hoc signed (no paid Apple Developer ID). To clear it, run once:
 
-       xattr -dr com.apple.quarantine /Applications/AlmacRemote.app
+       xattr -dr com.apple.quarantine "/Applications/$APP_NAME.app"
 
-3. Open AlmacRemote.app from /Applications.
+3. Open $APP_NAME.app from /Applications.
 
 Sources: https://github.com/cremenescu/mRemoteNXT
 License: GPL-2.0-or-later

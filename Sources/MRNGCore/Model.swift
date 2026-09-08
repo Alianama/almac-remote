@@ -70,7 +70,7 @@ public final class MRNGNode: Identifiable, Hashable {
 
     // MARK: - Factories for new nodes (with mRemoteNG default attributes)
 
-    public static func makeConnection(name: String, protocolType: String = "RDP",
+    public static func makeConnection(name: String, protocolType: String = "SSH2",
                                       hostname: String = "") -> MRNGNode {
         var a = defaultAttributes(container: false)
         a["Name"] = name
@@ -86,7 +86,7 @@ public final class MRNGNode: Identifiable, Hashable {
         return MRNGNode(id: UUID().uuidString.lowercased(), name: name, isContainer: true, attributes: a)
     }
 
-    private static func defaultPortString(for proto: String) -> String {
+    public static func defaultPortString(for proto: String) -> String {
         switch proto {
         case "SSH1", "SSH2": return "22"
         case "Telnet": return "23"
@@ -101,7 +101,7 @@ public final class MRNGNode: Identifiable, Hashable {
         var a: [String: String] = [
             "Type": container ? "Container" : "Connection",
             "Expanded": container ? "true" : "false",
-            "Descr": "", "Icon": "mRemoteNG", "Panel": "General",
+            "Descr": "", "Icon": container ? "mRemoteNG" : "Linux", "Panel": "General",
             "Username": "", "Domain": "", "Password": "", "Hostname": "",
             "Protocol": "RDP", "PuttySession": "Default Settings", "Port": "3389",
             "ConnectToConsole": "false", "UseCredSsp": "true", "RenderingEngine": "IE",

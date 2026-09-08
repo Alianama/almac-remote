@@ -37,10 +37,11 @@ extension MRNGNode {
 
     private var protocolIcon: (symbol: String, color: Color) {
         switch protocolType {
+        case "LocalShell":   return ("terminal.fill", .primary)
         case "SSH1", "SSH2": return ("terminal", .green)
         case "Telnet":       return ("terminal", .orange)
         case "RDP":          return ("display", .blue)
-        case "HTTP", "HTTPS":return ("globe", .blue)
+        case "HTTP", "HTTPS":return ("safari", .blue)
         case "VNC":          return ("rectangle.on.rectangle", .purple)
         case "IntApp":       return ("app.badge", .gray)
         default:             return ("network", .secondary)
@@ -61,6 +62,23 @@ struct ConnectedBadgeView: View {
                 .foregroundStyle(.white)
                 .frame(width: 3.5, height: 3.5)
                 .offset(x: 0.3)
+        }
+    }
+}
+
+/// Marks a connection sharing its host:port with another connection elsewhere in the tree.
+struct DuplicateBadgeView: View {
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(Color.orange)
+                .frame(width: 8, height: 8)
+                .shadow(color: .black.opacity(0.3), radius: 0.5, x: 0, y: 0.5)
+            Image(systemName: "exclamationmark")
+                .resizable()
+                .scaledToFit()
+                .foregroundStyle(.white)
+                .frame(width: 1.5, height: 5)
         }
     }
 }
@@ -200,6 +218,18 @@ struct ContentView: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
+        HStack(spacing: 0) {
+            mainContent
+            if model.showAskAI {
+                AskAIResizeHandle(width: $model.askAIPanelWidth)
+                AskAIPanel()
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: model.showAskAI)
+    }
+
+    @ViewBuilder private var mainContent: some View {
         ZStack {
             NavigationSplitView {
                 sidebar
@@ -219,7 +249,16 @@ struct ContentView: View {
                     .help(model.isAllExpanded ? t("Toolbar.CollapseAll") : t("Toolbar.ExpandAll"))
                     Button { model.sortAlphabetical() } label: { Image(systemName: "arrow.up.arrow.down") }
                         .help(t("Toolbar.SortAlphabetical"))
-                    Button { if model.selectedNodeID != nil { model.editorVisible = true } } label: {
+                    Button { model.sidebarShowsHostname.toggle() } label: {
+                        Image(systemName: model.sidebarShowsHostname ? "at" : "textformat")
+                    }
+                    .help(model.sidebarShowsHostname ? t("Toolbar.ShowNames") : t("Toolbar.ShowHostnames"))
+                    Button {
+                        if model.selectedNodeID != nil {
+                            model.editingIsNewConnection = false
+                            model.editorVisible = true
+                        }
+                    } label: {
                         Image(systemName: "slider.horizontal.3")
                     }.help(t("Toolbar.EditSelected"))
                     .disabled(model.selectedNodeID == nil)
@@ -229,12 +268,21 @@ struct ContentView: View {
                     Button { openWindow(id: "authenticator") } label: { Image(systemName: "key.fill") }
                         .help(t("Authenticator.Open"))
                         .keyboardShortcut("a", modifiers: [.command, .shift])
+                    Button { model.showThemePicker = true } label: { Image(systemName: "paintbrush.fill") }
+                        .help(t("Toolbar.ChangeTheme"))
+                    Button { model.showAskAI.toggle() } label: { Image(systemName: "sparkles") }
+                        .help(t("AskAI.Title"))
+                    Button { openWindow(id: "preferences") } label: { Image(systemName: "gearshape.fill") }
+                        .help(t("Settings.Title"))
                 }
                 ToolbarItem(placement: .principal) {
                     if !model.sessions.isEmpty { PanelTabBar() }
                 }
             }
             .disabled(model.isLocked)
+            .sheet(isPresented: $model.showThemePicker) {
+                ThemePickerSheet().environmentObject(model)
+            }
 
             if model.isLocked {
                 LockScreenView()
@@ -255,7 +303,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $model.editorVisible) {
             if let id = model.selectedNodeID {
-                EditorSheet(nodeID: id).environmentObject(model)
+                EditorSheet(nodeID: id, isNew: model.editingIsNewConnection).environmentObject(model)
             } else {
                 // No node to edit — shouldn't normally happen, but bail out
                 // rather than leaving an empty, input-blocking sheet on screen.
@@ -459,6 +507,7 @@ struct TreeRow: View {
         .contextMenu {
             Button(t("Context.Edit")) {
                 model.selectedNodeID = node.id
+                model.editingIsNewConnection = false
                 model.editorVisible = true
             }
             .keyboardShortcut(.return)
@@ -614,6 +663,17 @@ struct NodeRow: View {
     private var isConnected: Bool {
         model.sessions.contains { $0.node.id == node.id }
     }
+    private var isDuplicate: Bool {
+        !node.isContainer && !node.hostname.isEmpty
+            && model.duplicateHostPortKeys().contains("\(node.hostname.lowercased()):\(node.port)")
+    }
+    /// Folders always show their name (they have no hostname); a connection
+    /// with no hostname set yet falls back to its name too, so the row is
+    /// never blank while the toggle is on.
+    private var displayText: String {
+        if model.sidebarShowsHostname, !node.isContainer, !node.hostname.isEmpty { return node.hostname }
+        return node.name
+    }
 
     var body: some View {
         HStack(spacing: 6) {
@@ -625,6 +685,12 @@ struct NodeRow: View {
                         // never gets clipped or overlaps the next row at small
                         // row heights.
                         ConnectedBadgeView()
+                    }
+                }
+                .overlay(alignment: .topTrailing) {
+                    if isDuplicate {
+                        DuplicateBadgeView()
+                            .help(String(format: t("Tree.DuplicateHostPort"), node.hostname, node.port))
                     }
                 }
             if model.renamingNodeID == node.id {
@@ -642,7 +708,7 @@ struct NodeRow: View {
                     }
                     .onExitCommand { model.renamingNodeID = nil }
             } else {
-                Text(node.name)
+                Text(displayText)
                     .font(.system(size: model.uiFontSize))
                     .lineLimit(1)
             }
@@ -703,24 +769,27 @@ struct SessionTabBar: View {
             // content) — keeps the "+" button pinned at the trailing edge either way.
             tabScrollView
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Button { model.splitSelectedSession(direction: .horizontal) } label: {
-                Image(systemName: "square.split.2x1").font(.callout)
+            if model.selectedSessionIsSplittable {
+                Button { model.splitSelectedSession(direction: .horizontal) } label: {
+                    Image(systemName: "square.split.2x1").font(.callout)
+                }
+                .buttonStyle(.plain)
+                .help(t("Terminal.SplitRight"))
+                .disabled(!model.canSplitSelectedSession(direction: .horizontal))
+                Button { model.splitSelectedSession(direction: .vertical) } label: {
+                    Image(systemName: "square.split.1x2").font(.callout)
+                }
+                .buttonStyle(.plain)
+                .help(t("Terminal.SplitDown"))
+                .disabled(!model.canSplitSelectedSession(direction: .vertical))
+                Divider().frame(height: 16)
             }
-            .buttonStyle(.plain)
-            .help(t("Terminal.SplitRight"))
-            .disabled(!model.canSplitSelectedSession(direction: .horizontal))
-            Button { model.splitSelectedSession(direction: .vertical) } label: {
-                Image(systemName: "square.split.1x2").font(.callout)
-            }
-            .buttonStyle(.plain)
-            .help(t("Terminal.SplitDown"))
-            .disabled(!model.canSplitSelectedSession(direction: .vertical))
-            Divider().frame(height: 16)
             Button { model.openLocalTerminal() } label: {
                 Image(systemName: "plus")
                     .font(.caption.bold())
                     .frame(width: 22, height: 22)
                     .background(Circle().strokeBorder(.secondary.opacity(0.5)))
+                    .contentShape(Circle()) // the whole circle is clickable, not just the glyph's own pixels
             }
             .buttonStyle(.plain)
             .help(t("Menu.NewLocalTerminal"))
@@ -748,7 +817,16 @@ struct SessionTabBar: View {
                     .background(session.id == model.selectedSessionID
                                 ? Color.accentColor.opacity(0.22) : Color.clear)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .onTapGesture { model.selectedSessionID = session.id }
+                    // A single AppKit view spanning the whole pill owns
+                    // left-click-to-select AND middle-click-to-close — mixing
+                    // this with a sibling SwiftUI .onTapGesture let the gesture's
+                    // own hit-testing win first, so no background view ever saw
+                    // the middle click. The "x" Button above still wins hit-testing
+                    // over its own pixels since it renders in front of this background.
+                    .background(TabClickCatcher(
+                        onSelect: { model.selectedSessionID = session.id },
+                        onMiddleClick: { model.closeSession(session.id) }
+                    ))
                     .contextMenu {
                         Button(t("Context.Reconnect")) { model.reconnect(session) }
                         Button(t("Context.Disconnect")) { model.closeSession(session.id) }
@@ -772,6 +850,100 @@ struct SessionTabBar: View {
     }
 }
 
+/// Drag handle that resizes the Ask AI panel, the same way the sidebar's own
+/// edge is draggable — the panel sits in a plain `HStack` beside
+/// `NavigationSplitView` rather than as one of its own columns, so it has
+/// no automatic resize behavior of its own.
+struct AskAIResizeHandle: View {
+    @Binding var width: Double
+    private let range: ClosedRange<Double> = 280...640
+    @State private var startWidth: Double?
+
+    var body: some View {
+        // A bare Divider() stretched to a 6pt frame paints that whole strip
+        // with its separator color — a visible gray bar next to the panel.
+        // Keep the real hairline at its natural 1pt width, centered inside a
+        // wider *transparent* hit area that's just there for easier dragging.
+        ZStack {
+            Color.clear
+            Divider()
+        }
+            .frame(width: 6)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                if hovering { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let base = startWidth ?? width
+                        if startWidth == nil { startWidth = width }
+                        // The panel is trailing, so dragging left (negative
+                        // translation) should widen it.
+                        width = min(max(base - value.translation.width, range.lowerBound), range.upperBound)
+                    }
+                    .onEnded { _ in startWidth = nil }
+            )
+    }
+}
+
+/// Owns both left-click (select) and middle-click (close, Chrome's tab
+/// gesture) for a tab pill in one real `NSView` — SwiftUI's own gesture
+/// system only recognizes left-click and, layered onto the same view via
+/// `.onTapGesture`, was winning hit-testing outright before a background
+/// `NSView` ever saw the middle-click event at all.
+struct TabClickCatcher: NSViewRepresentable {
+    var onSelect: () -> Void
+    var onMiddleClick: () -> Void
+
+    func makeNSView(context: Context) -> ClickCatcherView {
+        let view = ClickCatcherView()
+        view.onSelect = onSelect
+        view.onMiddleClick = onMiddleClick
+        return view
+    }
+    func updateNSView(_ nsView: ClickCatcherView, context: Context) {
+        nsView.onSelect = onSelect
+        nsView.onMiddleClick = onMiddleClick
+    }
+
+    final class ClickCatcherView: NSView {
+        var onSelect: (() -> Void)?
+        var onMiddleClick: (() -> Void)?
+        private var monitor: Any?
+
+        // Neither a `mouseDown` nor an `otherMouseDown` override reliably fired
+        // here — something else in the SwiftUI-composed hierarchy (this row
+        // also has .contextMenu) wins ordinary hit-testing first, for BOTH
+        // button kinds, letting only clicks that miss every sibling's own
+        // hit-test area (e.g. blank padding) reach this view directly. A local
+        // event monitor sidesteps that entirely: it sees every matching event
+        // delivered to this window regardless of which view AppKit's own
+        // hit-test would have picked, so we just check geometry ourselves.
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let monitor { NSEvent.removeMonitor(monitor) }
+            monitor = nil
+            guard window != nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .otherMouseDown]) { [weak self] event in
+                guard let self, event.window === self.window else { return event }
+                let point = self.convert(event.locationInWindow, from: nil)
+                guard self.bounds.contains(point) else { return event }
+                if event.type == .leftMouseDown {
+                    self.onSelect?()
+                } else if event.buttonNumber == 2 {
+                    self.onMiddleClick?()
+                }
+                return event
+            }
+        }
+
+        deinit {
+            if let monitor { NSEvent.removeMonitor(monitor) }
+        }
+    }
+}
+
 struct SessionView: View {
     @EnvironmentObject var model: AppModel
     let session: Session
@@ -786,6 +958,7 @@ struct SessionView: View {
                 fontSize: fontSize,
                 theme: model.terminalTheme,
                 cursorBlinkSpeed: model.cursorBlinkSpeed,
+                scrollback: model.terminalScrollback,
                 onTitleChange: { newTitle in
                     model.updateTitleFromTerminal(session.id, newTitle)
                 },

@@ -23,6 +23,7 @@ final class RDPNSView: NSView, RDPClientDelegate {
 
     private var session: Session
     private var didStart = false
+    var sessionID: UUID { session.id }
 
     init(session: Session) {
         self.session = session
@@ -331,6 +332,20 @@ final class RDPNSView: NSView, RDPClientDelegate {
     }
 }
 
+/// Keeps each session's live RDP NSView around by session id, so the shared
+/// focus-reclaim watchdog (`AppModel.reclaimSessionFocus`) can restore keyboard
+/// focus to it after the app/window loses and regains key status — the same
+/// backgrounding problem terminal panes have (see `TerminalViewRegistry`).
+@MainActor
+final class RDPViewRegistry {
+    static let shared = RDPViewRegistry()
+    private var entries: [UUID: RDPNSView] = [:]
+
+    func existing(for id: UUID) -> RDPNSView? { entries[id] }
+    func store(_ id: UUID, view: RDPNSView) { entries[id] = view }
+    func remove(_ id: UUID) { entries[id] = nil }
+}
+
 struct RDPContainer: NSViewRepresentable {
     let session: Session
     let isActive: Bool
@@ -339,6 +354,7 @@ struct RDPContainer: NSViewRepresentable {
     func makeNSView(context: Context) -> RDPNSView {
         let view = RDPNSView(session: session)
         view.onDisconnect = onDisconnect
+        RDPViewRegistry.shared.store(session.id, view: view)
         return view
     }
 
@@ -355,5 +371,6 @@ struct RDPContainer: NSViewRepresentable {
 
     static func dismantleNSView(_ nsView: RDPNSView, coordinator: ()) {
         nsView.stop()
+        RDPViewRegistry.shared.remove(nsView.sessionID)
     }
 }
