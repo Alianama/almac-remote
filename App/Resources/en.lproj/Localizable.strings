@@ -257,6 +257,8 @@
 "AskAI.AttachFile" = "Attach a file";
 "AskAI.Stop" = "Stop";
 "AskAI.CopyResponse" = "Copy response";
+"AskAI.CopyAll" = "Copy entire conversation";
+"AskAI.ProviderLocked" = "Provider is locked once a chat starts — start a new chat to switch.";
 "AskAI.FileTruncated" = "(truncated)";
 "Settings.AI" = "AI";
 "Settings.AIModelPlaceholder" = "Default";

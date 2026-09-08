@@ -9,13 +9,14 @@ import Foundation
 /// stores a key — auth is whatever account the user is already logged into
 /// via that CLI's own login (each of these supports a free-tier account).
 enum AIProvider: String, CaseIterable, Identifiable, Codable {
-    case claude, codex, gemini
+    case claude, codex, gemini, opencode
     var id: String { rawValue }
     var displayName: String {
         switch self {
-        case .claude: return "Claude Code"
-        case .codex:  return "Codex (ChatGPT)"
-        case .gemini: return "Gemini"
+        case .claude:   return "Claude Code"
+        case .codex:    return "Codex (ChatGPT)"
+        case .gemini:   return "Gemini"
+        case .opencode: return "OpenCode"
         }
     }
 
@@ -193,6 +194,14 @@ enum AIAssistant {
             // there's nothing else to key off since it never hands one back.
             if resumeToken != nil { a += ["--resume", "latest"] }
             return a
+        case .opencode:
+            // "plan" is the least-permissive built-in agent (denies file edits) —
+            // OpenCode has no single "disable everything but chat" flag the way
+            // Claude's --restricted or Codex's --sandbox read-only do.
+            var a = ["run", prompt, "--agent", "plan", "--format", "json"]
+            if !model.isEmpty { a += ["-m", model] }
+            if let resumeToken { a += ["-s", resumeToken] }
+            return a
         }
     }
 
@@ -246,11 +255,63 @@ enum AIAssistant {
         return (resultText, usage)
     }
 
+    enum OpenCodeParseResult {
+        case success(text: String, usage: AIUsageStats, sessionID: String?)
+        case apiError(String)
+        case unrecognized
+    }
+
+    /// `opencode run --format json` prints one JSON object per line (NDJSON
+    /// event stream), not a single result object — verified directly against
+    /// real `opencode run`/`opencode run -s <id>` round trips (confirmed
+    /// session resume actually recalls prior turns). Relevant event shapes:
+    /// `{"type":"text","sessionID":...,"part":{"text":"..."}}`,
+    /// `{"type":"step_finish","sessionID":...,"part":{"tokens":{"input":n,"output":n},"cost":n}}`,
+    /// `{"type":"error","sessionID":...,"error":{"data":{"message":"..."}}}`.
+    private static func parseOpenCodeStream(_ text: String) -> OpenCodeParseResult {
+        var textParts: [String] = []
+        var usage = AIUsageStats()
+        var sessionID: String?
+        var sawEvent = false
+        for line in text.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, let data = trimmed.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+            sawEvent = true
+            if let sid = obj["sessionID"] as? String { sessionID = sid }
+            switch obj["type"] as? String {
+            case "text":
+                if let part = obj["part"] as? [String: Any], let t = part["text"] as? String { textParts.append(t) }
+            case "step_finish":
+                if let part = obj["part"] as? [String: Any] {
+                    if let tokens = part["tokens"] as? [String: Any] {
+                        usage.inputTokens = tokens["input"] as? Int
+                        usage.outputTokens = tokens["output"] as? Int
+                    }
+                    usage.costUSD = part["cost"] as? Double
+                }
+            case "error":
+                if let err = obj["error"] as? [String: Any],
+                   let errData = err["data"] as? [String: Any],
+                   let message = errData["message"] as? String {
+                    return .apiError(message)
+                }
+                return .apiError("OpenCode reported an error")
+            default:
+                break
+            }
+        }
+        guard sawEvent else { return .unrecognized }
+        let joined = textParts.joined()
+        return joined.isEmpty ? .unrecognized : .success(text: joined, usage: usage, sessionID: sessionID)
+    }
+
     /// Codex `exec` (non-JSON) prints a trailing "tokens used\n<number>"
-    /// summary to stdout — a combined figure, not split input/output.
-    /// Confirmed directly against a real `codex exec ...` run.
-    private static func parseCodexTokenCount(fromStdout stdout: String) -> Int? {
-        let lines = stdout.components(separatedBy: "\n")
+    /// summary on **stderr** (verified with stdout/stderr captured
+    /// separately — stdout never had it) — a combined figure, not split
+    /// input/output.
+    private static func parseCodexTokenCount(fromStderr stderr: String) -> Int? {
+        let lines = stderr.components(separatedBy: "\n")
         guard let idx = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "tokens used" }),
               idx + 1 < lines.count else { return nil }
         let numberText = lines[idx + 1].trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: "")
@@ -259,14 +320,18 @@ enum AIAssistant {
         return Int((value * 1000).rounded())
     }
 
-    /// Codex `exec` prints "session id: <uuid>" near the top of stdout —
-    /// that id is what `codex exec resume <id> <prompt>` expects. Confirmed
-    /// directly against a real `codex exec` / `codex exec resume` round trip.
-    private static func parseCodexSessionID(fromStdout stdout: String) -> String? {
-        for line in stdout.components(separatedBy: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("session id:") {
-                return trimmed.dropFirst("session id:".count).trimmingCharacters(in: .whitespaces)
+    /// Codex `exec` prints "session id: <uuid>" as part of its startup banner
+    /// on **stderr**, not stdout (verified directly: `codex exec ... >out 2>err`
+    /// — the line only ever showed up in `err`). That id is what
+    /// `codex exec resume <id> <prompt>` expects. Checking stdout too as a
+    /// harmless fallback in case a future version moves it.
+    private static func parseCodexSessionID(fromStreams streams: [String]) -> String? {
+        for stream in streams {
+            for line in stream.components(separatedBy: "\n") {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("session id:") {
+                    return trimmed.dropFirst("session id:".count).trimmingCharacters(in: .whitespaces)
+                }
             }
         }
         return nil
@@ -323,8 +388,8 @@ enum AIAssistant {
                     let trimmed = fileText.trimmingCharacters(in: .whitespacesAndNewlines)
                     if !trimmed.isEmpty {
                         var usage = AIUsageStats()
-                        usage.totalTokens = parseCodexTokenCount(fromStdout: outText)
-                        let sessionID = parseCodexSessionID(fromStdout: outText)
+                        usage.totalTokens = parseCodexTokenCount(fromStderr: errText)
+                        let sessionID = parseCodexSessionID(fromStreams: [errText, outText])
                         continuation.resume(returning: .success(AIAskAnswer(text: trimmed, usage: usage, sessionToken: sessionID)))
                         return
                     }
@@ -350,8 +415,21 @@ enum AIAssistant {
                             continuation.resume(returning: .success(AIAskAnswer(text: outText, usage: nil, sessionToken: "latest")))
                         }
                     case .codex:
-                        let sessionID = parseCodexSessionID(fromStdout: outText)
+                        let sessionID = parseCodexSessionID(fromStreams: [errText, outText])
                         continuation.resume(returning: .success(AIAskAnswer(text: outText, usage: nil, sessionToken: sessionID)))
+                    case .opencode:
+                        // OpenCode can exit 0 with an "error" event in the stream
+                        // (e.g. an invalid API key for whichever provider/model was
+                        // picked) — that has to surface as a failure, not a "success"
+                        // whose answer is a raw JSON error blob.
+                        switch parseOpenCodeStream(outText) {
+                        case .success(let text, let usage, let sessionID):
+                            continuation.resume(returning: .success(AIAskAnswer(text: text, usage: usage, sessionToken: sessionID)))
+                        case .apiError(let message):
+                            continuation.resume(returning: .failure(AIAssistantError(message: message)))
+                        case .unrecognized:
+                            continuation.resume(returning: .success(AIAskAnswer(text: outText, usage: nil, sessionToken: nil)))
+                        }
                     }
                 } else {
                     continuation.resume(returning: .failure(AIAssistantError(message: errText.isEmpty ? outText : errText)))
@@ -379,6 +457,8 @@ enum AIModelDiscovery {
         switch provider {
         case .codex:
             return discoverCodex()
+        case .opencode:
+            return discoverOpenCode()
         case .claude, .gemini:
             return .failure(Unsupported(message: t("Settings.AIDiscoveryUnsupported")))
         }
@@ -398,6 +478,35 @@ enum AIModelDiscovery {
             guard (m["visibility"] as? String) == "list", let slug = m["slug"] as? String else { return nil }
             return AIModelEntry(modelID: slug, alias: (m["display_name"] as? String) ?? slug)
         }
+        return entries.isEmpty ? .failure(unsupported) : .success(entries)
+    }
+
+    /// `opencode models` is a genuine live command (unlike Codex's cache
+    /// file) — one "provider/model" id per line, plain text, already in the
+    /// exact format `opencode run -m` expects. Verified directly.
+    private static func discoverOpenCode() -> Result<[AIModelEntry], Unsupported> {
+        let unsupported = Unsupported(message: t("Settings.AIDiscoveryUnsupported"))
+        guard let bin = AIAssistant.binaryPath(for: .opencode) else { return .failure(unsupported) }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: bin)
+        process.arguments = ["models"]
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        process.standardError = Pipe()
+        do {
+            try process.run()
+        } catch {
+            return .failure(unsupported)
+        }
+        process.waitUntilExit()
+        guard process.terminationStatus == 0,
+              let text = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) else {
+            return .failure(unsupported)
+        }
+        let entries = text.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.contains("/") }
+            .map { AIModelEntry(modelID: $0, alias: $0) }
         return entries.isEmpty ? .failure(unsupported) : .success(entries)
     }
 }

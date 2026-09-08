@@ -221,7 +221,7 @@ struct ContentView: View {
         HStack(spacing: 0) {
             mainContent
             if model.showAskAI {
-                AskAIResizeHandle(width: $model.askAIPanelWidth)
+                AskAIResizeHandle(width: $model.askAIPanelWidth, onEnd: model.persistAskAIPanelWidth)
                 AskAIPanel()
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
@@ -856,6 +856,9 @@ struct SessionTabBar: View {
 /// no automatic resize behavior of its own.
 struct AskAIResizeHandle: View {
     @Binding var width: Double
+    /// Called once when the drag ends — the natural place to persist, so
+    /// intermediate values during the drag never touch UserDefaults.
+    var onEnd: () -> Void = {}
     private let range: ClosedRange<Double> = 280...640
     @State private var startWidth: Double?
 
@@ -882,7 +885,10 @@ struct AskAIResizeHandle: View {
                         // translation) should widen it.
                         width = min(max(base - value.translation.width, range.lowerBound), range.upperBound)
                     }
-                    .onEnded { _ in startWidth = nil }
+                    .onEnded { _ in
+                        startWidth = nil
+                        onEnd()
+                    }
             )
     }
 }

@@ -256,6 +256,8 @@
 "AskAI.AttachFile" = "Załącz plik";
 "AskAI.Stop" = "Zatrzymaj";
 "AskAI.CopyResponse" = "Kopiuj odpowiedź";
+"AskAI.CopyAll" = "Kopiuj całą rozmowę";
+"AskAI.ProviderLocked" = "Dostawca jest zablokowany po rozpoczęciu czatu — zacznij nowy czat, aby zmienić.";
 "AskAI.FileTruncated" = "(skrócono)";
 "Settings.AI" = "AI";
 "Settings.AIModelPlaceholder" = "Domyślny";

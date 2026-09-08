@@ -258,6 +258,8 @@
 "AskAI.AttachFile" = "Ataseaza un fisier";
 "AskAI.Stop" = "Opreste";
 "AskAI.CopyResponse" = "Copiaza raspunsul";
+"AskAI.CopyAll" = "Copiaza toata conversatia";
+"AskAI.ProviderLocked" = "Furnizorul este blocat dupa ce conversatia incepe — porneste o conversatie noua pentru a schimba.";
 "AskAI.FileTruncated" = "(trunchiat)";
 "Settings.AI" = "AI";
 "Settings.AIModelPlaceholder" = "Implicit";

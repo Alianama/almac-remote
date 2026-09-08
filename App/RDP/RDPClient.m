@@ -13,14 +13,28 @@
 // typedef collides with CoreFoundation's).
 enum { MRNG_CF_UNICODETEXT = 13, MRNG_CF_DIB = 8, MRNG_CF_DIBV5 = 17 };
 
+// Frame buffers are reused round-robin instead of malloc/free per frame — a
+// real cost at up to 4K (mrng_end_paint, and therefore this callback, runs on
+// the same RDP thread that also pumps FreeRDP's network protocol state
+// machine). Safe because `enqueueImage:`'s coalescing keeps at most 2
+// CGImages alive at once (the one on screen + one pending dispatch), well
+// inside this pool's headroom before a slot is reused.
+#define RDP_FRAME_BUFFER_POOL_SIZE 4
+
 @interface RDPClient () {
     RDPCore *_core;
     CGImageRef _pendingImage;   // most recent frame, delivered coalesced on main
     BOOL _updateScheduled;
     NSTimer *_clipboardTimer;   // polls the local pasteboard for changes
     NSInteger _lastPasteboardChangeCount;
+    uint8_t *_frameBufferPool[RDP_FRAME_BUFFER_POOL_SIZE];
+    size_t _frameBufferCapacity[RDP_FRAME_BUFFER_POOL_SIZE];
+    NSUInteger _frameBufferPoolIndex;
+    CGColorSpaceRef _sharedColorSpace; // immutable — created once, not per frame
 }
 - (void)enqueueImage:(CGImageRef)img;
+- (uint8_t *)nextFrameBufferOfLength:(size_t)len;
+- (CGColorSpaceRef)sharedColorSpace;
 - (void)applyRemoteClipboardData:(NSData *)data format:(uint32_t)formatId;
 - (void)provideLocalClipboardForFormat:(uint32_t)formatId;
 @property (nonatomic, copy) NSString *host;
@@ -33,8 +47,6 @@ enum { MRNG_CF_UNICODETEXT = 13, MRNG_CF_DIB = 8, MRNG_CF_DIBV5 = 17 };
 @property (nonatomic) int scale;
 @end
 
-static void freeImageData(void *info, const void *data, size_t size) { free((void *)data); }
-
 static void core_onConnected(void *ctx, int w, int h) {
     RDPClient *self = (__bridge RDPClient *)ctx;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -45,17 +57,17 @@ static void core_onConnected(void *ctx, int w, int h) {
 static void core_onImage(void *ctx, const uint8_t *bgra, int w, int h, int stride) {
     RDPClient *self = (__bridge RDPClient *)ctx;
     size_t len = (size_t)stride * (size_t)h;
-    void *copy = malloc(len);
+
+    uint8_t *copy = [self nextFrameBufferOfLength:len];
     if (!copy) return;
     memcpy(copy, bgra, len);
 
-    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, copy, len, freeImageData);
+    // NULL release callback: `copy` is pool-owned and reused, never freed here.
+    CGDataProviderRef provider = CGDataProviderCreateWithData(NULL, copy, len, NULL);
     CGBitmapInfo info = kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little; // BGRA32
-    CGImageRef img = CGImageCreate((size_t)w, (size_t)h, 8, 32, (size_t)stride, cs, info,
+    CGImageRef img = CGImageCreate((size_t)w, (size_t)h, 8, 32, (size_t)stride, [self sharedColorSpace], info,
                                    provider, NULL, false, kCGRenderingIntentDefault);
     CGDataProviderRelease(provider);
-    CGColorSpaceRelease(cs);
     if (!img) return;
     [self enqueueImage:img]; // coalescing: keep only the latest frame for main
     CGImageRelease(img);
@@ -210,6 +222,29 @@ static void core_onClipboardDataRequested(void *ctx, uint32_t formatId) {
     [_clipboardTimer invalidate];
     if (_core) rdpcore_free(_core); // thread already finished (onDisconnected transferred the retain)
     if (_pendingImage) CGImageRelease(_pendingImage);
+    for (int i = 0; i < RDP_FRAME_BUFFER_POOL_SIZE; i++) {
+        free(_frameBufferPool[i]);
+    }
+    if (_sharedColorSpace) CGColorSpaceRelease(_sharedColorSpace);
+}
+
+// Both of these are only ever called from `core_onImage`, which only ever
+// runs on the single RDP I/O thread (never concurrently), so no locking is
+// needed here — only `enqueueImage:` below hands off across threads.
+- (uint8_t *)nextFrameBufferOfLength:(size_t)len {
+    NSUInteger slot = _frameBufferPoolIndex % RDP_FRAME_BUFFER_POOL_SIZE;
+    _frameBufferPoolIndex++;
+    if (_frameBufferCapacity[slot] < len) {
+        free(_frameBufferPool[slot]);
+        _frameBufferPool[slot] = malloc(len);
+        _frameBufferCapacity[slot] = _frameBufferPool[slot] ? len : 0;
+    }
+    return _frameBufferPool[slot];
+}
+
+- (CGColorSpaceRef)sharedColorSpace {
+    if (!_sharedColorSpace) _sharedColorSpace = CGColorSpaceCreateDeviceRGB();
+    return _sharedColorSpace;
 }
 
 // Coalescing: if main is busy, intermediate frames are replaced -> we only show the latest.

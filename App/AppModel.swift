@@ -173,9 +173,14 @@ final class AppModel: ObservableObject {
     /// the node instead of just reverting attribute edits on it.
     @Published var editingIsNewConnection: Bool = false
     @Published var showAskAI: Bool = false
-    /// User-draggable width of the Ask AI panel, like the sidebar's own resize handle.
-    @Published var askAIPanelWidth: Double = 360 {
-        didSet { UserDefaults.standard.set(askAIPanelWidth, forKey: "askAIPanelWidth") }
+    /// User-draggable width of the Ask AI panel, like the sidebar's own resize
+    /// handle. No `didSet` persist-on-every-mutation on purpose — the drag
+    /// handle updates this on every pixel of mouse movement, and a native
+    /// NSSplitView resize doesn't touch disk mid-drag either. The handle
+    /// calls `persistAskAIPanelWidth()` once, only when the drag ends.
+    @Published var askAIPanelWidth: Double = 360
+    func persistAskAIPanelWidth() {
+        UserDefaults.standard.set(askAIPanelWidth, forKey: "askAIPanelWidth")
     }
     /// Which installed AI CLI "Ask AI" shells out to for the next message.
     @Published var aiProvider: AIProvider = .claude {
@@ -500,6 +505,13 @@ final class AppModel: ObservableObject {
     }
 
     private func reclaimTerminalFocus() {
+        // Runs once a second unconditionally — its only "don't steal focus"
+        // guard below checks `firstResponder is NSText`, which a plain SwiftUI
+        // `Text(...).textSelection(.enabled)` (the chat bubbles in Ask AI,
+        // read-only, not an editable NSTextView) doesn't satisfy. Without this,
+        // any text selection in that panel got wiped within a second of
+        // starting it — the reclaim yanked focus back to the terminal mid-drag.
+        guard !showAskAI else { return }
         guard let id = focusedSessionID else { return }
         // RDP panes have the exact same backgrounding/reclaim problem terminal
         // panes did — they just weren't covered by the original fix because

@@ -5,6 +5,11 @@
 import SwiftUI
 import AppKit
 
+func copyStringToPasteboard(_ text: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
+}
+
 /// Persistent trailing chat panel (toggled with ⌘L) — shells out to a
 /// locally installed, already-logged-in AI CLI (Claude Code / Codex /
 /// Gemini). No API key is ever stored by this app; auth is whatever
@@ -42,6 +47,25 @@ struct AskAIPanel: View {
         AIProvider.allCases.filter { model.aiEnabledProviders.contains($0) }
     }
     private var messages: [AIChatMessage] { model.activeAIChatSession?.messages ?? [] }
+    /// Once a session has a message, its provider is locked to whichever CLI
+    /// answered the first one — each holds its own conversation context via
+    /// `--resume`/`-s`, so switching CLIs mid-thread would silently start a
+    /// second, disconnected conversation under the same chat title. A brand
+    /// new (empty) session has no lock yet, so any provider can still be picked.
+    private var lockedProvider: AIProvider? { messages.first?.provider }
+    private var effectiveProvider: AIProvider { lockedProvider ?? model.aiProvider }
+
+    private var fullTranscriptText: String {
+        messages.map { msg in
+            let label: String
+            switch msg.role {
+            case .user: label = "You"
+            case .assistant: label = msg.provider?.displayName ?? "AI"
+            case .error: label = "Error"
+            }
+            return "\(label):\n\(msg.text)"
+        }.joined(separator: "\n\n")
+    }
 
     /// One shared radius so bubbles/input/chips/code blocks read as one
     /// consistent shape language instead of a mix of different roundings.
@@ -74,6 +98,15 @@ struct AskAIPanel: View {
         HStack(spacing: 8) {
             Text(t("AskAI.Title")).font(.headline)
             Spacer()
+            // A real drag-selection spanning every message bubble isn't
+            // available in SwiftUI (each bubble is its own isolated
+            // `.textSelection` scope, same as why single-message copy needed
+            // its own button) — this copies the whole visible conversation
+            // in one click instead, which is the reliable way to get it all.
+            Button { copyStringToPasteboard(fullTranscriptText) } label: { Image(systemName: "text.badge.checkmark") }
+                .buttonStyle(.borderless)
+                .help(t("AskAI.CopyAll"))
+                .disabled(messages.isEmpty)
             Button { model.newAIChatSession() } label: { Image(systemName: "square.and.pencil") }
                 .buttonStyle(.borderless)
                 .help(t("AskAI.NewSession"))
@@ -100,19 +133,24 @@ struct AskAIPanel: View {
             // otherwise sizes itself to its WIDEST row across every item,
             // not just the current selection, which was overflowing this
             // panel's width and crowding the Ask button against it.
-            Picker("", selection: $model.aiProvider) {
+            Picker("", selection: Binding(
+                get: { effectiveProvider },
+                set: { if lockedProvider == nil { model.aiProvider = $0 } }
+            )) {
                 ForEach(enabledProviders) { p in
                     Text(p.displayName).lineLimit(1).tag(p)
                 }
             }
             .labelsHidden()
             .frame(width: 108)
-            .help(AIAssistant.binaryPath(for: model.aiProvider) != nil ? "" : t("AskAI.NotFound"))
-            .onChange(of: model.aiProvider) { _, _ in selectedModelID = "" }
-            if !model.models(for: model.aiProvider).isEmpty {
+            .disabled(lockedProvider != nil)
+            .help(lockedProvider != nil ? t("AskAI.ProviderLocked")
+                  : (AIAssistant.binaryPath(for: effectiveProvider) != nil ? "" : t("AskAI.NotFound")))
+            .onChange(of: effectiveProvider) { _, _ in selectedModelID = "" }
+            if !model.models(for: effectiveProvider).isEmpty {
                 Picker("", selection: $selectedModelID) {
                     Text(t("Settings.AIModelPlaceholder")).lineLimit(1).tag("")
-                    ForEach(model.models(for: model.aiProvider)) { entry in
+                    ForEach(model.models(for: effectiveProvider)) { entry in
                         Text(entry.displayName).lineLimit(1).tag(entry.modelID)
                     }
                 }
@@ -320,8 +358,7 @@ struct AskAIPanel: View {
     }
 
     private func copyToClipboard(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
+        copyStringToPasteboard(text)
     }
 
     private static func formatCount(_ n: Int) -> String {
@@ -393,7 +430,7 @@ struct AskAIPanel: View {
         input = ""
         let file = attachedFile
         attachedFile = nil
-        let provider = model.aiProvider
+        let provider = effectiveProvider
         let sessionID = model.ensureActiveAIChatSession()
         let displayText = file.map { "\(q)\n\n📎 \($0.name)" } ?? q
         model.appendAIChatMessage(AIChatMessage(role: .user, text: displayText, provider: provider), toSession: sessionID)
@@ -499,18 +536,32 @@ struct MarkdownMessageView: View {
     }
 
     @ViewBuilder private func codeBlock(lang: String?, code: String) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let lang {
-                Text(lang).font(.caption2).foregroundStyle(.secondary)
-                    .padding(.horizontal, 8).padding(.top, 5)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                if let lang {
+                    Text(lang).font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                // A dedicated copy button per code block — a horizontal-drag
+                // selection here fights the block's own horizontal scrolling
+                // (same class of bug the outer chat history's LazyVStack had),
+                // so this is the one guaranteed-reliable way to grab the code.
+                Button { copyStringToPasteboard(code) } label: { Image(systemName: "doc.on.doc") }
+                    .buttonStyle(.plain)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .help(t("AskAI.CopyResponse"))
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                Text(code)
-                    .font(.system(.callout, design: .monospaced))
-                    .textSelection(.enabled)
-                    .padding(8)
-            }
+            // Wrap instead of horizontal-scroll: removes the competing
+            // horizontal-drag gesture entirely, which was also intermittently
+            // hiding the text mid-selection, not just blocking the copy.
+            Text(code)
+                .font(.system(.callout, design: .monospaced))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .padding(8)
         .background(Color.secondary.opacity(0.18))
         .clipShape(RoundedRectangle(cornerRadius: 6))
     }
@@ -587,7 +638,13 @@ struct SidebarMaterialView: NSViewRepresentable {
         let view = NSVisualEffectView()
         view.material = .sidebar
         view.blendingMode = .behindWindow
-        view.state = .active
+        // The real sidebar dims to a duller gray whenever the window isn't
+        // key (standard macOS behavior for every sidebar/toolbar) — forcing
+        // `.active` here kept this panel permanently vibrant instead, so it
+        // visibly diverged from the sidebar's own look the moment the window
+        // lost focus. `.followsWindowActiveState` is the default; matching it
+        // explicitly keeps both panels dimming together, never independently.
+        view.state = .followsWindowActiveState
         return view
     }
     func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
