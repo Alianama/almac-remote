@@ -148,7 +148,13 @@ final class MRNGTerminalView: LocalProcessTerminalView {
         }
     }
 
-    @objc private func rightClickPaste() {
+    @objc private func rightClickPaste(_ sender: NSClickGestureRecognizer) {
+        // Same overlapping-hidden-pane problem as the left-click monitor above:
+        // this gesture recognizer fires regardless of which stacked tab is
+        // actually visible, so without a real hit-test a right-click can paste
+        // into a background pane the user can't see.
+        let hit = window?.contentView?.hitTest(sender.location(in: nil))
+        guard hit === self || (hit?.isDescendant(of: self) ?? false) else { return }
         if let text = NSPasteboard.general.string(forType: .string), !text.isEmpty {
             send(txt: text)
         }
