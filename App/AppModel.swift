@@ -871,7 +871,8 @@ final class AppModel: ObservableObject {
     /// sheet's checkbox — called after a successful unlock/change.
     func syncMasterPasswordKeychain(enabled: Bool, password: String) {
         if enabled {
-            MasterPasswordKeychain.save(password)
+            let ok = MasterPasswordKeychain.save(password)
+            AppLog.log("masterPassword: save to Keychain \(ok ? "succeeded" : "FAILED")")
         } else {
             MasterPasswordKeychain.delete()
         }
