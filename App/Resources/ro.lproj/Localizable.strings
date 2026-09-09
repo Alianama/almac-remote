@@ -228,6 +228,10 @@
 "Security.SetPassword" = "Schimba parola";
 "Security.WrongMasterPassword" = "Parola master incorecta.";
 "Security.MasterPasswordMismatch" = "Parolele nu se potrivesc.";
+"Security.SaveInKeychain" = "Salveaza in Keychain, deblocheaza cu Touch ID";
+"Security.UnlockWithTouchID" = "Deblocheaza cu Touch ID";
+"Security.OrEnterManually" = "sau introdu-o manual mai jos";
+"Security.KeychainUnlockFailed" = "Deblocarea cu Touch ID a esuat.";
 
 /* Authenticator: standalone TOTP vault (like Google Authenticator) */
 "Authenticator.Menu" = "Authenticator";

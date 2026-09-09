@@ -6,11 +6,15 @@ import SwiftUI
 
 /// Sheet for the two master-password flows: unlocking a document protected
 /// with a non-default password (`AppModel.tryMasterPassword`), and setting or
-/// changing it (`AppModel.changeMasterPassword`) — see `Security.Menu`.
+/// changing it (`AppModel.changeMasterPassword`) — see `Security.Menu`. Either
+/// flow can optionally save the password to the Keychain (`MasterPasswordKeychain`,
+/// Touch ID / account password gated) so it doesn't need retyping next time.
 struct MasterPasswordSheet: View {
     @EnvironmentObject var model: AppModel
     @State private var password = ""
     @State private var confirmPassword = ""
+    @State private var saveToKeychain = false
+    @State private var keychainBusy = false
     @FocusState private var focused: Bool
 
     private var isChange: Bool { model.masterPasswordSheetMode == .change }
@@ -24,6 +28,16 @@ struct MasterPasswordSheet: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if !isChange && model.masterPasswordKeychainSaved {
+                Button {
+                    unlockWithTouchID()
+                } label: {
+                    Label(t("Security.UnlockWithTouchID"), systemImage: "touchid")
+                }
+                .disabled(keychainBusy)
+                Text(t("Security.OrEnterManually")).font(.caption).foregroundStyle(.secondary)
+            }
+
             SecureField(isChange ? t("Security.NewMasterPasswordField") : t("Security.MasterPasswordField"),
                         text: $password)
                 .textFieldStyle(.roundedBorder)
@@ -33,6 +47,10 @@ struct MasterPasswordSheet: View {
                 SecureField(t("Security.ConfirmMasterPasswordField"), text: $confirmPassword)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(submit)
+            }
+
+            Toggle(isOn: $saveToKeychain) {
+                Label(t("Security.SaveInKeychain"), systemImage: "touchid")
             }
 
             if let error = model.masterPasswordError {
@@ -50,7 +68,10 @@ struct MasterPasswordSheet: View {
         }
         .padding(20)
         .frame(width: 380)
-        .onAppear { focused = true }
+        .onAppear {
+            focused = true
+            saveToKeychain = model.masterPasswordKeychainSaved
+        }
     }
 
     private func submit() {
@@ -60,8 +81,21 @@ struct MasterPasswordSheet: View {
                 return
             }
             model.changeMasterPassword(to: password)
-        } else {
-            model.tryMasterPassword(password)
+            model.syncMasterPasswordKeychain(enabled: saveToKeychain, password: password)
+        } else if model.tryMasterPassword(password) {
+            model.syncMasterPasswordKeychain(enabled: saveToKeychain, password: password)
+        }
+    }
+
+    private func unlockWithTouchID() {
+        keychainBusy = true
+        Task {
+            if let saved = await MasterPasswordKeychain.load(reason: t("Security.UnlockReason")) {
+                _ = model.tryMasterPassword(saved)
+            } else {
+                model.masterPasswordError = t("Security.KeychainUnlockFailed")
+            }
+            keychainBusy = false
         }
     }
 }

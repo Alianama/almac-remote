@@ -421,6 +421,14 @@ final class AppModel: ObservableObject {
     @Published var masterPasswordSheetVisible = false
     @Published var masterPasswordSheetMode: MasterPasswordSheetMode = .unlock
     @Published var masterPasswordError: String?
+    /// Whether the master password is currently saved in the Keychain
+    /// (Touch ID / account password gated) — see `MasterPasswordKeychain`.
+    @Published var masterPasswordKeychainSaved: Bool = MasterPasswordKeychain.isSaved
+    /// Set when `tryUnlockFromKeychainOrPrompt` runs before the app is
+    /// frontmost (e.g. during launch's auto-reopen) — Touch ID can't present
+    /// properly yet, same issue `lockNow()` works around. Retried once the
+    /// app actually becomes active.
+    private var pendingKeychainUnlockAttempt = false
 
     init() {
         if let v = UserDefaults.standard.object(forKey: "uiFontSize") as? Double { uiFontSize = v }
@@ -468,6 +476,14 @@ final class AppModel: ObservableObject {
         ) { [weak self] _ in
             guard let self, self.isLocked else { return }
             self.authenticateToUnlock()
+        }
+        // Retry a Keychain unlock deferred from before the app was frontmost.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self, self.pendingKeychainUnlockAttempt else { return }
+            self.pendingKeychainUnlockAttempt = false
+            Task { await self.tryUnlockFromKeychainOrPrompt() }
         }
         installLifecycleLogging()
     }
@@ -652,8 +668,7 @@ final class AppModel: ObservableObject {
                                              iterations: parsed.kdfIterations) {
                 self.loadError = t("Error.CustomMaster")
                 masterPasswordError = nil
-                masterPasswordSheetMode = .unlock
-                masterPasswordSheetVisible = true
+                Task { await tryUnlockFromKeychainOrPrompt() }
             }
         } catch {
             self.doc = nil
@@ -829,6 +844,38 @@ final class AppModel: ObservableObject {
         masterPasswordError = nil
         loadError = nil
         return true
+    }
+
+    /// Tries the Keychain-saved master password (Touch ID / account password)
+    /// first, falling back to the manual-entry sheet. Safe to call any time —
+    /// no-ops if the doc is already unlocked (or there's no doc). Defers
+    /// itself via `pendingKeychainUnlockAttempt` if the app isn't frontmost yet.
+    func tryUnlockFromKeychainOrPrompt() async {
+        guard let doc, !doc.protected.isEmpty,
+              !MRNGCrypto.passwordIsCorrect(protectedBase64: doc.protected, password: masterPassword,
+                                             iterations: doc.kdfIterations)
+        else { return }
+        guard NSApp.isActive else {
+            pendingKeychainUnlockAttempt = true
+            return
+        }
+        if let saved = await MasterPasswordKeychain.load(reason: t("Security.UnlockReason")),
+           tryMasterPassword(saved) {
+            return
+        }
+        masterPasswordSheetMode = .unlock
+        masterPasswordSheetVisible = true
+    }
+
+    /// Saves or removes the Keychain-stored master password to match the
+    /// sheet's checkbox — called after a successful unlock/change.
+    func syncMasterPasswordKeychain(enabled: Bool, password: String) {
+        if enabled {
+            MasterPasswordKeychain.save(password)
+        } else {
+            MasterPasswordKeychain.delete()
+        }
+        masterPasswordKeychainSaved = MasterPasswordKeychain.isSaved
     }
 
     /// Re-encrypts every stored secret this app knows about — the open

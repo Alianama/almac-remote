@@ -226,6 +226,10 @@
 "Security.SetPassword" = "Zmień hasło";
 "Security.WrongMasterPassword" = "Nieprawidłowe hasło główne.";
 "Security.MasterPasswordMismatch" = "Hasła nie są takie same.";
+"Security.SaveInKeychain" = "Zapisz w Keychain, odblokuj Touch ID";
+"Security.UnlockWithTouchID" = "Odblokuj Touch ID";
+"Security.OrEnterManually" = "albo wpisz je ręcznie poniżej";
+"Security.KeychainUnlockFailed" = "Nie udało się odblokować Touch ID.";
 
 /* Authenticator: standalone TOTP vault (like Google Authenticator) */
 "Authenticator.Menu" = "Authenticator";

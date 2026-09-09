@@ -226,6 +226,10 @@
 "Security.SetPassword" = "Change Password";
 "Security.WrongMasterPassword" = "Incorrect master password.";
 "Security.MasterPasswordMismatch" = "Passwords don't match.";
+"Security.SaveInKeychain" = "Save in Keychain, unlock with Touch ID";
+"Security.UnlockWithTouchID" = "Unlock with Touch ID";
+"Security.OrEnterManually" = "or enter it manually below";
+"Security.KeychainUnlockFailed" = "Couldn't unlock with Touch ID.";
 
 /* Authenticator: standalone TOTP vault (like Google Authenticator) */
 "Authenticator.Menu" = "Authenticator";
