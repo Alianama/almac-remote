@@ -160,7 +160,7 @@
 
 /* Errors / load */
 "Error.ParseFailed" = "Could not parse: %@";
-"Error.CustomMaster" = "This file uses a custom master password (not yet supported).";
+"Error.CustomMaster" = "This file uses a custom master password. Enter it in the dialog to unlock.";
 "Error.NotImplemented" = "Protocol not implemented: %@";
 "Proxy.CouldNotStart" = "Could not start the proxy tunnel (no free port or ssh failed to launch).";
 "Proxy.TimedOut" = "Proxy tunnel timed out — check the jump host, port and credentials.";
@@ -212,6 +212,20 @@
 "Security.Locked" = "Almac Remote is Locked";
 "Security.Unlock" = "Unlock";
 "Security.UnlockReason" = "Unlock Almac Remote";
+
+/* Security: master password (encrypts stored connection/proxy passwords + TOTP secrets) */
+"Security.ChangeMasterPassword" = "Change Master Password…";
+"Security.UnlockTitle" = "Enter Master Password";
+"Security.UnlockHint" = "This file's stored passwords are protected with a custom master password.";
+"Security.ChangeTitle" = "Change Master Password";
+"Security.ChangeHint" = "Re-encrypts every stored connection password, proxy-jump password, and 2FA secret in this file — plus your Authenticator vault — with the new password. There's no recovery if you forget it.";
+"Security.MasterPasswordField" = "Master Password";
+"Security.NewMasterPasswordField" = "New Master Password";
+"Security.ConfirmMasterPasswordField" = "Confirm New Password";
+"Security.Cancel" = "Cancel";
+"Security.SetPassword" = "Change Password";
+"Security.WrongMasterPassword" = "Incorrect master password.";
+"Security.MasterPasswordMismatch" = "Passwords don't match.";
 
 /* Authenticator: standalone TOTP vault (like Google Authenticator) */
 "Authenticator.Menu" = "Authenticator";

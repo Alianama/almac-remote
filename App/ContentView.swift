@@ -283,6 +283,9 @@ struct ContentView: View {
             .sheet(isPresented: $model.showThemePicker) {
                 ThemePickerSheet().environmentObject(model)
             }
+            .sheet(isPresented: $model.masterPasswordSheetVisible) {
+                MasterPasswordSheet().environmentObject(model)
+            }
 
             if model.isLocked {
                 LockScreenView()

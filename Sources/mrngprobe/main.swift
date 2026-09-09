@@ -46,6 +46,17 @@ do {
     let dec = MRNGCrypto.decrypt(base64: enc, password: pw, iterations: doc.kdfIterations)
     print("Encrypt round-trip: \(dec == secret ? "OK" : "FAILED (\(dec ?? "nil"))")")
 
+    // Master-password change self-check (AppModel.changeMasterPassword's core
+    // operation): decrypt under the old password, re-encrypt under a new one —
+    // the new password must open it and the old one must no longer.
+    let oldPw = pw, newPw = "correct-horse-battery-staple"
+    let encOld = MRNGCrypto.encrypt(plaintext: secret, password: oldPw, iterations: doc.kdfIterations)
+    let migrated = MRNGCrypto.decrypt(base64: encOld, password: oldPw, iterations: doc.kdfIterations)
+        .map { MRNGCrypto.encrypt(plaintext: $0, password: newPw, iterations: doc.kdfIterations) }
+    let opensWithNew = migrated.flatMap { MRNGCrypto.decrypt(base64: $0, password: newPw, iterations: doc.kdfIterations) } == secret
+    let rejectsOld = migrated.flatMap { MRNGCrypto.decrypt(base64: $0, password: oldPw, iterations: doc.kdfIterations) } == nil
+    print("Master password change: \(opensWithNew && rejectsOld ? "OK" : "FAILED (opensWithNew=\(opensWithNew) rejectsOld=\(rejectsOld))")")
+
     // Serializer round-trip test: serialize -> re-parse -> compare.
     let xml = ConfConsSerializer.serialize(doc)
     let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("mrng_roundtrip.xml")

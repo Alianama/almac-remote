@@ -89,6 +89,10 @@ struct MRemoteApp: App {
                     Text(t("Security.30Minutes")).tag(30.0)
                 } label: { Label(t("Security.IdleTimeout"), systemImage: "timer") }
                 .disabled(!model.lockEnabled)
+                Divider()
+                Button { model.beginChangeMasterPassword() } label: {
+                    Label(t("Security.ChangeMasterPassword"), systemImage: "key.fill")
+                }
             }
         }
 

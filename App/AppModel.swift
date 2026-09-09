@@ -48,6 +48,8 @@ struct ExternalTool: Codable, Identifiable, Hashable {
 /// A standalone TOTP (2FA) entry — a personal-authenticator-style vault, independent
 /// of any RDP/SSH connection. The secret is stored encrypted, same scheme as
 /// connection passwords (see `AppModel.encryptAuthenticatorSecret`).
+enum MasterPasswordSheetMode { case unlock, change }
+
 struct AuthenticatorEntry: Codable, Identifiable, Hashable {
     var id = UUID()
     var label: String
@@ -410,8 +412,15 @@ final class AppModel: ObservableObject {
         RDPClient.setDiagnosticLogging(on, directory: logDirectory.path)
     }
 
-    /// v1: assume the default passphrase. Phase 2: prompt the user when Protected fails to validate.
+    /// Active passphrase for encrypting/decrypting every stored connection
+    /// password, proxy-jump password, and TOTP secret (this document's and the
+    /// standalone Authenticator vault's). Defaults to mRemoteNG's well-known
+    /// default until the user unlocks a custom-protected file or sets one via
+    /// `changeMasterPassword(to:)` — see `Security.Menu` in the app's menu bar.
     private(set) var masterPassword = MRNGCrypto.defaultPassword
+    @Published var masterPasswordSheetVisible = false
+    @Published var masterPasswordSheetMode: MasterPasswordSheetMode = .unlock
+    @Published var masterPasswordError: String?
 
     init() {
         if let v = UserDefaults.standard.object(forKey: "uiFontSize") as? Double { uiFontSize = v }
@@ -634,12 +643,17 @@ final class AppModel: ObservableObject {
             self.loadError = nil
             UserDefaults.standard.set(url.path, forKey: "lastOpenedFile")
             loadExpanded(for: parsed)
-            // Determine the master password: default, or (phase 2) prompted from the user.
+            // The default passphrase almost always matches (nothing in this app's
+            // UI sets a different one except `changeMasterPassword(to:)` below) —
+            // only prompt when it actually doesn't validate.
             if !parsed.protected.isEmpty,
                !MRNGCrypto.passwordIsCorrect(protectedBase64: parsed.protected,
-                                             password: MRNGCrypto.defaultPassword,
+                                             password: masterPassword,
                                              iterations: parsed.kdfIterations) {
                 self.loadError = t("Error.CustomMaster")
+                masterPasswordError = nil
+                masterPasswordSheetMode = .unlock
+                masterPasswordSheetVisible = true
             }
         } catch {
             self.doc = nil
@@ -776,6 +790,82 @@ final class AppModel: ObservableObject {
         let enc = node.encryptedProxyJumpPassword
         guard !enc.isEmpty, let doc else { return "" }
         return MRNGCrypto.decrypt(base64: enc, password: masterPassword, iterations: doc.kdfIterations) ?? ""
+    }
+
+    // MARK: - Master password
+
+    /// Opens the sheet to set a brand new master password (or change the
+    /// current custom one) for this document + the Authenticator vault.
+    func beginChangeMasterPassword() {
+        // If the open document is still locked under a custom password we
+        // haven't verified, `changeMasterPassword` couldn't decrypt its secrets
+        // to re-encrypt them — it would silently leave them stuck under that
+        // unknown password while `Protected` claims the new one. Unlock first.
+        if let doc, !doc.protected.isEmpty,
+           !MRNGCrypto.passwordIsCorrect(protectedBase64: doc.protected, password: masterPassword, iterations: doc.kdfIterations) {
+            masterPasswordError = nil
+            masterPasswordSheetMode = .unlock
+            masterPasswordSheetVisible = true
+            return
+        }
+        masterPasswordError = nil
+        masterPasswordSheetMode = .change
+        masterPasswordSheetVisible = true
+    }
+
+    /// Tries `password` against the open document's `Protected` check value.
+    /// On success, adopts it as the active master password used for every
+    /// subsequent encrypt/decrypt call and dismisses the sheet.
+    @discardableResult
+    func tryMasterPassword(_ password: String) -> Bool {
+        guard let doc, MRNGCrypto.passwordIsCorrect(
+            protectedBase64: doc.protected, password: password, iterations: doc.kdfIterations
+        ) else {
+            masterPasswordError = t("Security.WrongMasterPassword")
+            return false
+        }
+        masterPassword = password
+        masterPasswordSheetVisible = false
+        masterPasswordError = nil
+        loadError = nil
+        return true
+    }
+
+    /// Re-encrypts every stored secret this app knows about — the open
+    /// document's connection/proxy-jump passwords and TOTP secrets, plus the
+    /// standalone Authenticator vault — under `newPassword`, then adopts it as
+    /// the active master password. Anything that fails to decrypt under the
+    /// old password (shouldn't happen; defensive) is left untouched rather than
+    /// silently wiped.
+    func changeMasterPassword(to newPassword: String) {
+        let oldPassword = masterPassword
+        if let doc {
+            for node in doc.allNodes() {
+                reencryptAttribute(node, key: "Password", old: oldPassword, new: newPassword, iterations: doc.kdfIterations)
+                reencryptAttribute(node, key: "ProxyJumpPassword", old: oldPassword, new: newPassword, iterations: doc.kdfIterations)
+                reencryptAttribute(node, key: "TOTPSecret", old: oldPassword, new: newPassword, iterations: doc.kdfIterations)
+            }
+            self.doc?.protected = MRNGCrypto.encrypt(
+                plaintext: "ThisIsNotProtected", password: newPassword, iterations: doc.kdfIterations)
+            markDirty()
+            save()
+        }
+        for i in authenticatorEntries.indices {
+            guard let plain = MRNGCrypto.decrypt(
+                base64: authenticatorEntries[i].encryptedSecret, password: oldPassword,
+                iterations: AppModel.authenticatorKdfIterations) else { continue }
+            authenticatorEntries[i].encryptedSecret = MRNGCrypto.encrypt(
+                plaintext: plain, password: newPassword, iterations: AppModel.authenticatorKdfIterations)
+        }
+        masterPassword = newPassword
+        masterPasswordSheetVisible = false
+        masterPasswordError = nil
+    }
+
+    private func reencryptAttribute(_ node: MRNGNode, key: String, old: String, new: String, iterations: Int) {
+        guard let enc = node.attributes[key], !enc.isEmpty,
+              let plain = MRNGCrypto.decrypt(base64: enc, password: old, iterations: iterations) else { return }
+        node.attributes[key] = MRNGCrypto.encrypt(plaintext: plain, password: new, iterations: iterations)
     }
 
     // MARK: - Editing / saving

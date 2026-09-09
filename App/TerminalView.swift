@@ -390,7 +390,12 @@ struct TerminalContainer: NSViewRepresentable {
         // etc. connect to a remote host regardless of the app's own cwd, which
         // otherwise defaults to wherever the app happened to launch from.
         let cwd = session.kind == .localShell ? NSHomeDirectory() : nil
-        term.startProcess(executable: exe, args: args, environment: nil, execName: nil, currentDirectory: cwd)
+        // nil would fall back to SwiftTerm's own minimal env (TERM/LANG/etc, no
+        // PATH needed since every executable above is an absolute path) — only
+        // build a real array when there's something to add on top of that.
+        let extraEnv = Self.additionalEnvironment(for: session)
+        let env = extraEnv.isEmpty ? nil : SwiftTerm.Terminal.getEnvironmentVariables() + extraEnv
+        term.startProcess(executable: exe, args: args, environment: env, execName: nil, currentDirectory: cwd)
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
@@ -447,11 +452,9 @@ struct TerminalContainer: NSViewRepresentable {
                 "-o", "StrictHostKeyChecking=accept-new",
                 target,
             ]
-            // If we have a password AND sshpass is installed -> inject it.
-            // Otherwise plain ssh (uses agent key or prompts interactively).
-            if !session.password.isEmpty, let sshpass = sshpassPath() {
-                return (sshpass, ["-p", session.password, "/usr/bin/ssh"] + sshArgs)
-            }
+            // A stored password (if any) is fed in non-interactively via
+            // SSH_ASKPASS in `additionalEnvironment(for:)` below — never as a
+            // `-p`-style argv, which any local process could read off `ps`.
             return ("/usr/bin/ssh", sshArgs)
         case .telnet:
             return ("/usr/bin/telnet", [host, "\(port)"])
@@ -472,10 +475,19 @@ struct TerminalContainer: NSViewRepresentable {
         }
     }
 
-    /// Look for an installed sshpass (brew). Returns the path, or nil.
-    static func sshpassPath() -> String? {
-        let candidates = ["/opt/homebrew/bin/sshpass", "/usr/local/bin/sshpass"]
-        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    /// Extra environment entries `startIfReady` should add on top of SwiftTerm's
+    /// defaults (`Terminal.getEnvironmentVariables`) — currently just the
+    /// SSH_ASKPASS trio that feeds a stored SSH password to `ssh` non-interactively,
+    /// same mechanism `SSHTunnel` uses for jump-host proxies. Returns `[]` when
+    /// there's nothing to add (no stored password, or not an SSH session).
+    static func additionalEnvironment(for session: Session) -> [String] {
+        guard session.kind == .ssh, !session.password.isEmpty,
+              let script = SSHAskpass.writeScript() else { return [] }
+        return [
+            "SSH_ASKPASS=\(script)",
+            "SSH_ASKPASS_REQUIRE=force",
+            "MRNG_SSH_ASKPASS_SECRET=\(session.password)",
+        ]
     }
 
     /// App-specific known_hosts (separate from ~/.ssh/known_hosts), so we don't

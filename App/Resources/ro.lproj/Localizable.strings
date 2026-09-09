@@ -158,7 +158,7 @@
 
 /* Erori / incarcare */
 "Error.ParseFailed" = "Nu am putut parsa: %@";
-"Error.CustomMaster" = "Fisierul foloseste o parola master proprie (neimplementat inca).";
+"Error.CustomMaster" = "Fisierul foloseste o parola master proprie. Introdu-o in caseta de dialog pentru deblocare.";
 "Error.NotImplemented" = "Protocol nesuportat: %@";
 "Proxy.CouldNotStart" = "Nu am putut porni tunelul proxy (niciun port liber sau ssh nu a pornit).";
 "Proxy.TimedOut" = "Tunelul proxy a expirat — verifica jump host-ul, portul si credentialele.";
@@ -214,6 +214,20 @@
 "Security.Locked" = "Almac Remote este blocat";
 "Security.Unlock" = "Deblocheaza";
 "Security.UnlockReason" = "Deblocheaza Almac Remote";
+
+/* Security: master password (encrypts stored connection/proxy passwords + TOTP secrets) */
+"Security.ChangeMasterPassword" = "Schimba parola master…";
+"Security.UnlockTitle" = "Introdu parola master";
+"Security.UnlockHint" = "Parolele salvate in acest fisier sunt protejate cu o parola master proprie.";
+"Security.ChangeTitle" = "Schimba parola master";
+"Security.ChangeHint" = "Recripteaza fiecare parola de conexiune, parola proxy-jump si secret 2FA din acest fisier — plus vaultul Authenticator — cu noua parola. Nu exista recuperare daca o uiti.";
+"Security.MasterPasswordField" = "Parola master";
+"Security.NewMasterPasswordField" = "Noua parola master";
+"Security.ConfirmMasterPasswordField" = "Confirma noua parola";
+"Security.Cancel" = "Anuleaza";
+"Security.SetPassword" = "Schimba parola";
+"Security.WrongMasterPassword" = "Parola master incorecta.";
+"Security.MasterPasswordMismatch" = "Parolele nu se potrivesc.";
 
 /* Authenticator: standalone TOTP vault (like Google Authenticator) */
 "Authenticator.Menu" = "Authenticator";

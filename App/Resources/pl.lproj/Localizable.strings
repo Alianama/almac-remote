@@ -160,7 +160,7 @@
 
 /* Errors / load */
 "Error.ParseFailed" = "Nie można przetworzyć: %@";
-"Error.CustomMaster" = "Ten plik używa niestandardowego hasła głównego (jeszcze nieobsługiwane).";
+"Error.CustomMaster" = "Ten plik używa niestandardowego hasła głównego. Wpisz je w oknie, aby odblokować.";
 "Error.NotImplemented" = "Niezaimplementowany protokół: %@";
 "Proxy.CouldNotStart" = "Nie można uruchomić tunelu proxy (brak wolnego portu lub ssh się nie uruchomił).";
 "Proxy.TimedOut" = "Przekroczono czas oczekiwania na tunel proxy — sprawdź host, port i dane logowania.";
@@ -212,6 +212,20 @@
 "Security.Locked" = "Almac Remote jest zablokowany";
 "Security.Unlock" = "Odblokuj";
 "Security.UnlockReason" = "Odblokuj Almac Remote";
+
+/* Security: master password (encrypts stored connection/proxy passwords + TOTP secrets) */
+"Security.ChangeMasterPassword" = "Zmień hasło główne…";
+"Security.UnlockTitle" = "Wpisz hasło główne";
+"Security.UnlockHint" = "Zapisane hasła w tym pliku są chronione niestandardowym hasłem głównym.";
+"Security.ChangeTitle" = "Zmień hasło główne";
+"Security.ChangeHint" = "Ponownie szyfruje każde zapisane hasło połączenia, hasło proxy-jump i sekret 2FA w tym pliku — oraz Twój magazyn Authenticator — nowym hasłem. Jeśli je zapomnisz, nie da się go odzyskać.";
+"Security.MasterPasswordField" = "Hasło główne";
+"Security.NewMasterPasswordField" = "Nowe hasło główne";
+"Security.ConfirmMasterPasswordField" = "Potwierdź nowe hasło";
+"Security.Cancel" = "Anuluj";
+"Security.SetPassword" = "Zmień hasło";
+"Security.WrongMasterPassword" = "Nieprawidłowe hasło główne.";
+"Security.MasterPasswordMismatch" = "Hasła nie są takie same.";
 
 /* Authenticator: standalone TOTP vault (like Google Authenticator) */
 "Authenticator.Menu" = "Authenticator";
