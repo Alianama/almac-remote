@@ -94,6 +94,11 @@ struct MasterPasswordSheet: View {
                 _ = model.tryMasterPassword(saved)
             } else {
                 model.masterPasswordError = t("Security.KeychainUnlockFailed")
+                // A denied/failed read may have cleared the stale Keychain item
+                // (see MasterPasswordKeychain.load) — drop the Touch ID button
+                // and the "save to Keychain" checkbox back to match reality.
+                model.masterPasswordKeychainSaved = MasterPasswordKeychain.isSaved
+                saveToKeychain = model.masterPasswordKeychainSaved
             }
             keychainBusy = false
         }

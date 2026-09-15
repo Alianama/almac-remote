@@ -6,6 +6,7 @@ import SwiftUI
 import AppKit
 import MRNGCore
 import LocalAuthentication
+import SwiftTerm
 
 /// An open session backed by a tab.
 struct Session: Identifiable {
@@ -863,6 +864,10 @@ final class AppModel: ObservableObject {
            tryMasterPassword(saved) {
             return
         }
+        // `load` deletes a Keychain item it couldn't actually read (stale
+        // ACL from a previous ad-hoc build) — reflect that here so the sheet
+        // doesn't keep offering a Touch ID button that can only fail.
+        masterPasswordKeychainSaved = MasterPasswordKeychain.isSaved
         masterPasswordSheetMode = .unlock
         masterPasswordSheetVisible = true
     }
@@ -1248,10 +1253,49 @@ final class AppModel: ObservableObject {
     /// Adds a new pane to the selected tab, alongside its existing panes (if any).
     /// The first split picks `direction`; further panes just extend that same
     /// group up to `maxSplitPanes` — the group's layout direction doesn't change.
+    /// Duplicates the tab's own host; use `addSplitPane(_:)` for a different one.
     func splitSelectedSession(direction: Session.SplitDirection) {
         guard let id = selectedSessionID, let idx = sessions.firstIndex(where: { $0.id == id }),
               Self.splittableKinds.contains(sessions[idx].kind)
         else { return }
+        addPane(makeSession(for: sessions[idx].node), toTabAt: idx, direction: direction)
+    }
+
+    /// Whether `node`'s own kind could ever be one pane of a split (no
+    /// RDP/HTTP/GUI panes) — independent of whether there's a split tab open
+    /// right now to add it to. Used to always *show* "Add to Split" in the
+    /// tree's context menu (vs. `canAddToSplit`, which decides if it's enabled).
+    func nodeKindIsSplittable(_ node: MRNGNode) -> Bool {
+        !node.isContainer && Self.splittableKinds.contains(kind(for: node))
+    }
+
+    /// Whether `node` could join the selected tab's split group (or start one)
+    /// right now — same kind restriction as `nodeKindIsSplittable`, plus a
+    /// currently selected tab of a splittable kind with room left in its group.
+    func canAddToSplit(_ node: MRNGNode) -> Bool {
+        guard nodeKindIsSplittable(node),
+              let id = selectedSessionID, let s = sessions.first(where: { $0.id == id }),
+              Self.splittableKinds.contains(s.kind)
+        else { return false }
+        guard let groupID = s.splitGroupID else { return true }
+        return splitGroupMembers(groupID).count < Self.maxSplitPanes
+    }
+
+    /// Adds `node` — any host, independent of the selected tab's own — as a new
+    /// pane of the selected tab's split group, turning it into a split first if
+    /// it isn't one already. This is how a split ends up with panes on
+    /// *different* addresses (`splitSelectedSession` above only ever duplicates
+    /// the current one).
+    func addSplitPane(_ node: MRNGNode, direction: Session.SplitDirection = .horizontal) {
+        guard canAddToSplit(node), let id = selectedSessionID,
+              let idx = sessions.firstIndex(where: { $0.id == id })
+        else { return }
+        addPane(makeSession(for: node), toTabAt: idx, direction: direction)
+    }
+
+    /// Shared bookkeeping for both split entry points above: makes the tab at
+    /// `idx` a split (if it isn't one yet) and appends `pane` to its group.
+    private func addPane(_ pane: Session, toTabAt idx: Int, direction: Session.SplitDirection) {
         let groupID: UUID
         if let existing = sessions[idx].splitGroupID {
             guard splitGroupMembers(existing).count < Self.maxSplitPanes else { return }
@@ -1262,11 +1306,24 @@ final class AppModel: ObservableObject {
             sessions[idx].isSplitPrimary = true
             sessions[idx].splitDirection = direction
         }
-        var pane = makeSession(for: sessions[idx].node)
-        pane.splitGroupID = groupID
-        sessions.append(pane)
-        focusedSessionID = pane.id
-        startProxyTunnel(for: pane)
+        var fresh = pane
+        fresh.splitGroupID = groupID
+        sessions.append(fresh)
+        focusedSessionID = fresh.id
+        startProxyTunnel(for: fresh)
+    }
+
+    /// Sends `text` + Enter to every pane in `groupID` as if typed there
+    /// directly — bulk remote: run one command across every VM in a split at
+    /// once. Panes still mid-connect (proxy tunnel not ready, process not yet
+    /// started) simply have nothing listening on the pty and drop it, same as
+    /// typing into a not-yet-connected terminal would.
+    func broadcastCommand(_ text: String, toGroup groupID: UUID) {
+        guard !text.isEmpty else { return }
+        let bytes = Array((text + "\r").utf8)[...]
+        for member in splitGroupMembers(groupID) {
+            TerminalViewRegistry.shared.existing(for: member.id)?.term.send(data: bytes)
+        }
     }
 
     /// Closes just this one pane. The rest of its split group keeps running; if

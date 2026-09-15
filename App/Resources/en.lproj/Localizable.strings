@@ -27,6 +27,9 @@
 "Terminal.SplitRight" = "Split Right";
 "Terminal.SplitDown" = "Split Down";
 "Terminal.ClosePane" = "Close Pane";
+"Terminal.BroadcastPlaceholder" = "Send command to all %d panes…";
+"Terminal.BroadcastSend" = "Send to All";
+"Terminal.BroadcastHelp" = "Runs this command in every pane of the split at once.";
 "Menu.Appearance" = "Appearance";
 "Menu.ExternalTools" = "External tools";
 
@@ -74,6 +77,8 @@
 "Context.Edit" = "Edit...";
 "Context.Connect" = "Connect";
 "Context.SFTP" = "Transfer files (SFTP)";
+"Context.AddToSplit" = "Add to Split (different host)";
+"Context.AddToSplitHelp" = "Adds this host as a new pane in the currently selected split tab. Open or select a split-eligible tab (SSH/Telnet/SFTP/Local Shell) first.";
 "Context.ExternalToolsSubmenu" = "External tools";
 "Context.NewConnectionHere" = "New connection here";
 "Context.NewFolderHere" = "New folder here";

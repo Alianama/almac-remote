@@ -27,6 +27,9 @@
 "Terminal.SplitRight" = "Podziel w prawo";
 "Terminal.SplitDown" = "Podziel w dol";
 "Terminal.ClosePane" = "Zamknij panel";
+"Terminal.BroadcastPlaceholder" = "Wyślij polecenie do wszystkich %d paneli…";
+"Terminal.BroadcastSend" = "Wyślij do wszystkich";
+"Terminal.BroadcastHelp" = "Uruchamia to polecenie w każdym panelu podziału naraz.";
 "Menu.Appearance" = "Wygląd";
 "Menu.ExternalTools" = "Narzędzia zewnętrzne";
 
@@ -74,6 +77,8 @@
 "Context.Edit" = "Edytuj...";
 "Context.Connect" = "Połącz";
 "Context.SFTP" = "Prześlij pliki (SFTP)";
+"Context.AddToSplit" = "Dodaj do podziału (inny host)";
+"Context.AddToSplitHelp" = "Dodaje ten host jako nowy panel do aktualnie wybranej karty podziału. Najpierw otwórz lub wybierz kartę, którą można podzielić (SSH/Telnet/SFTP/Terminal lokalny).";
 "Context.ExternalToolsSubmenu" = "Narzędzia zewnętrzne";
 "Context.NewConnectionHere" = "Nowe połączenie tutaj";
 "Context.NewFolderHere" = "Nowy folder tutaj";

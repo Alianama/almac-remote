@@ -151,6 +151,23 @@ enum AIAssistant {
         return nil
     }
 
+    /// Whether `bin --help` advertises `flag` — CLI flags come and go between
+    /// versions, so a hardcoded one can kill the whole ask on an older install.
+    /// ponytail: uncached, so it costs one ~0.4s `--help` run per ask; cache it
+    /// per binary path if that ever shows up next to a multi-second LLM call.
+    private static func supportsFlag(_ flag: String, bin: String) -> Bool {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: bin)
+        p.arguments = ["--help"]
+        let out = Pipe()
+        p.standardOutput = out
+        p.standardError = Pipe()
+        guard (try? p.run()) != nil else { return false }
+        let text = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        p.waitUntilExit()
+        return text.contains(flag)
+    }
+
     /// Read-only/no-side-effect args per CLI — this is a Q&A box, not a
     /// coding-agent session, so tool/file/shell access is deliberately off.
     /// `model`, when non-empty, is passed as each CLI's own `--model`/`-m`
@@ -165,11 +182,17 @@ enum AIAssistant {
     /// session id (Claude/Codex) or "latest" (Gemini has no id to give back).
     /// Verified directly: `claude -p --resume <id>` and
     /// `codex exec resume <id> <prompt>` both recall prior turns correctly.
-    private static func args(for provider: AIProvider, prompt: String, model: String,
+    private static func args(for provider: AIProvider, bin: String, prompt: String, model: String,
                               outputFile: URL?, resumeToken: String?) -> [String] {
         switch provider {
         case .claude:
-            var a = ["-p", prompt, "--output-format", "json", "--restricted"]
+            var a = ["-p", prompt, "--output-format", "json"]
+            // `--restricted` only exists in newer Claude Code builds; older ones
+            // exit with "error: unknown option '--restricted'" and the whole ask
+            // fails. Fall back to the long-standing `--permission-mode plan`,
+            // which also denies edits/commands (same role "plan" plays for
+            // OpenCode below).
+            a += supportsFlag("--restricted", bin: bin) ? ["--restricted"] : ["--permission-mode", "plan"]
             if !model.isEmpty { a += ["--model", model] }
             if let resumeToken { a += ["--resume", resumeToken] }
             return a
@@ -359,7 +382,7 @@ enum AIAssistant {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: bin)
-        process.arguments = args(for: provider, prompt: prompt, model: model, outputFile: outputFile, resumeToken: resumeToken)
+        process.arguments = args(for: provider, bin: bin, prompt: prompt, model: model, outputFile: outputFile, resumeToken: resumeToken)
         if !extraEnv.isEmpty {
             var env = ProcessInfo.processInfo.environment
             for (key, value) in extraEnv { env[key] = value }

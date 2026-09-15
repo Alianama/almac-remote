@@ -386,22 +386,26 @@ struct ContentView: View {
         if let groupID = session.splitGroupID {
             let members = model.splitGroupMembers(groupID)
             let axis: Axis = session.splitDirection == .vertical ? .vertical : .horizontal
-            GeometryReader { geo in
-                let total = axis == .vertical ? geo.size.height : geo.size.width
-                let each = total / CGFloat(max(members.count, 1))
-                Group {
-                    if axis == .vertical {
-                        VSplitView { ForEach(members) { splitPane($0, axis: axis, idealLength: each) } }
-                    } else {
-                        HSplitView { ForEach(members) { splitPane($0, axis: axis, idealLength: each) } }
+            VStack(spacing: 0) {
+                BroadcastBar(groupID: groupID, paneCount: members.count)
+                Divider()
+                GeometryReader { geo in
+                    let total = axis == .vertical ? geo.size.height : geo.size.width
+                    let each = total / CGFloat(max(members.count, 1))
+                    Group {
+                        if axis == .vertical {
+                            VSplitView { ForEach(members) { splitPane($0, axis: axis, idealLength: each) } }
+                        } else {
+                            HSplitView { ForEach(members) { splitPane($0, axis: axis, idealLength: each) } }
+                        }
                     }
+                    // Rebuilding the split container itself (instead of letting NSSplitView
+                    // patch in/out a subview) when the pane count changes is what gives every
+                    // pane an equal share and avoids a resize/paint glitch where a closed
+                    // pane's stale terminal content briefly shows through its neighbor. The
+                    // underlying shell process survives via `TerminalViewRegistry` either way.
+                    .id("\(groupID)-\(members.count)")
                 }
-                // Rebuilding the split container itself (instead of letting NSSplitView
-                // patch in/out a subview) when the pane count changes is what gives every
-                // pane an equal share and avoids a resize/paint glitch where a closed
-                // pane's stale terminal content briefly shows through its neighbor. The
-                // underlying shell process survives via `TerminalViewRegistry` either way.
-                .id("\(groupID)-\(members.count)")
             }
         } else {
             SessionView(session: session, isActive: session.id == model.focusedSessionID, fontSize: model.terminalFontSize)
@@ -433,6 +437,37 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// One-line command field shown above a split group. Enter sends the text to
+/// every pane's pty via `AppModel.broadcastCommand` — bulk remote: type once,
+/// run on every VM in the split at the same time.
+private struct BroadcastBar: View {
+    @EnvironmentObject var model: AppModel
+    let groupID: UUID
+    let paneCount: Int
+    @State private var text = ""
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "bolt.horizontal.circle").foregroundStyle(.secondary)
+            TextField(String(format: t("Terminal.BroadcastPlaceholder"), paneCount), text: $text)
+                .textFieldStyle(.plain)
+                .onSubmit {
+                    model.broadcastCommand(text, toGroup: groupID)
+                    text = ""
+                }
+            Button(t("Terminal.BroadcastSend")) {
+                model.broadcastCommand(text, toGroup: groupID)
+                text = ""
+            }
+            .disabled(text.isEmpty)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.regularMaterial)
+        .help(t("Terminal.BroadcastHelp"))
     }
 }
 
@@ -517,6 +552,11 @@ struct TreeRow: View {
             Divider()
             if !node.isContainer {
                 Button(t("Context.Connect")) { model.connect(node) }
+                if model.nodeKindIsSplittable(node) {
+                    Button(t("Context.AddToSplit")) { model.addSplitPane(node) }
+                        .disabled(!model.canAddToSplit(node))
+                        .help(t("Context.AddToSplitHelp"))
+                }
                 if node.protocolType.hasPrefix("SSH") {
                     Button(t("Context.SFTP")) { model.openSFTP(node) }
                 }

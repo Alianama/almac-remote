@@ -44,7 +44,20 @@ enum MasterPasswordKeychain {
     }
 
     /// Prompts Touch ID / the account password, then returns the saved
-    /// password — or nil if there isn't one, or authentication failed/was cancelled.
+    /// password — or nil if there isn't one, authentication failed/was
+    /// cancelled, or the OS itself refused the read.
+    ///
+    /// That last case happens after a rebuild: this app is ad-hoc signed (no
+    /// paid Developer ID, see the type doc above), so every `xcodebuild` run
+    /// produces a different signature. macOS ties the Keychain item's access
+    /// to the signature that created it, so the next launch shows its own
+    /// "wants to use your confidential information" system prompt — and if
+    /// that's denied, the item is stuck permanently unreadable while
+    /// `isSaved` still (correctly) reports it as present. Left alone, that
+    /// dangles the caller in a "Touch ID available" state that always fails
+    /// with no way out. So: on any non-cancel failure here, delete the item —
+    /// `isSaved` drops to false, the UI falls back to the manual password
+    /// field, and the user can just re-save under the current build.
     static func load(reason: String) async -> String? {
         guard isSaved else { return nil }
         let context = LAContext()
@@ -63,9 +76,13 @@ enum MasterPasswordKeychain {
         query[kSecReturnData as String] = true
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess, let data = result as? Data,
-              let password = String(data: data, encoding: .utf8) else { return nil }
-        return password
+        if status == errSecSuccess, let data = result as? Data,
+           let password = String(data: data, encoding: .utf8) {
+            return password
+        }
+        AppLog.log("MasterPasswordKeychain.load: SecItemCopyMatching failed status=\(status), clearing stale item")
+        delete()
+        return nil
     }
 
     static func delete() {

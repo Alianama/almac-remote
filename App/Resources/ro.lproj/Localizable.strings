@@ -25,6 +25,9 @@
 "Terminal.SplitRight" = "Imparte la dreapta";
 "Terminal.SplitDown" = "Imparte jos";
 "Terminal.ClosePane" = "Inchide panoul";
+"Terminal.BroadcastPlaceholder" = "Trimite comanda la toate cele %d panouri…";
+"Terminal.BroadcastSend" = "Trimite la toate";
+"Terminal.BroadcastHelp" = "Ruleaza aceasta comanda in fiecare panou al impartirii, deodata.";
 "Menu.Appearance" = "Aspect";
 "Menu.ExternalTools" = "Unelte externe";
 
@@ -72,6 +75,8 @@
 "Context.Edit" = "Editeaza...";
 "Context.Connect" = "Conecteaza";
 "Context.SFTP" = "Transfer fisiere (SFTP)";
+"Context.AddToSplit" = "Adauga la impartire (alta gazda)";
+"Context.AddToSplitHelp" = "Adauga aceasta gazda ca panou nou in tabul impartit selectat. Deschide sau selecteaza intai un tab care poate fi impartit (SSH/Telnet/SFTP/Terminal local).";
 "Context.ExternalToolsSubmenu" = "Unelte externe";
 "Context.NewConnectionHere" = "Conexiune noua aici";
 "Context.NewFolderHere" = "Folder nou aici";
