@@ -51,6 +51,7 @@ targets:
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGNING_ALLOWED: YES
         ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: App/AlmacRemote.entitlements
         SWIFT_VERSION: "5.9"
         SWIFT_OBJC_BRIDGING_HEADER: App/Bridging-Header.h
         CLANG_ENABLE_MODULES: YES

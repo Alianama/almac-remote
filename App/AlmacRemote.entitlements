@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	 Ad-hoc signed (no paid Developer ID team, see BUILD.md and
+	 MasterPasswordKeychain.swift). Hardened runtime's Library Validation
+	 requires a loaded dylib to share the main executable's Team ID; ad-hoc
+	 signing gives every binary (the app and each bundled FreeRDP/OpenSSL/
+	 ffmpeg dylib under Contents/Frameworks) its own distinct identity, so
+	 without this entitlement the app fails to launch at all with
+	 "different Team IDs" for every bundled dylib.
+	-->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>
