@@ -848,26 +848,23 @@ struct SessionTabBar: View {
                     HStack(spacing: 6) {
                         NodeIconView(node: session.node).frame(width: 14, height: 14)
                         Text(session.title).lineLimit(1)
-                        Button {
-                            model.closeSession(session.id)
-                        } label: {
-                            Image(systemName: "xmark").font(.caption2)
-                        }
-                        .buttonStyle(.plain)
+                        // Plain image, not a Button: on some older macOS versions the
+                        // SwiftUI Button here lost the hit-testing race against the
+                        // TabClickCatcher NSView behind it (that ordering is an AppKit/
+                        // SwiftUI interop detail, not something this view controls), so
+                        // the "x" would sometimes eat the click without closing the tab.
+                        // TabClickCatcher below is now the single, deterministic owner
+                        // of every click in the pill, close included.
+                        Image(systemName: "xmark").font(.caption2)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(session.id == model.selectedSessionID
                                 ? Color.accentColor.opacity(0.22) : Color.clear)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
-                    // A single AppKit view spanning the whole pill owns
-                    // left-click-to-select AND middle-click-to-close — mixing
-                    // this with a sibling SwiftUI .onTapGesture let the gesture's
-                    // own hit-testing win first, so no background view ever saw
-                    // the middle click. The "x" Button above still wins hit-testing
-                    // over its own pixels since it renders in front of this background.
                     .background(TabClickCatcher(
                         onSelect: { model.selectedSessionID = session.id },
+                        onClose: { model.closeSession(session.id) },
                         onMiddleClick: { model.closeSession(session.id) }
                     ))
                     .contextMenu {
@@ -880,6 +877,13 @@ struct SessionTabBar: View {
                         Divider()
                         Button(t("Context.RenameTab")) { model.promptAndRename(session) }
                         Button(t("Context.DuplicateTab")) { model.duplicate(session) }
+                        if model.isSplittable(session) {
+                            Divider()
+                            Button(t("Terminal.SplitRight")) { model.split(session, direction: .horizontal) }
+                                .disabled(!model.canSplit(session, direction: .horizontal))
+                            Button(t("Terminal.SplitDown")) { model.split(session, direction: .vertical) }
+                                .disabled(!model.canSplit(session, direction: .vertical))
+                        }
                         if !session.password.isEmpty {
                             Divider()
                             Button(t("Context.CopyPassword")) { model.copyPassword(session) }
@@ -943,23 +947,32 @@ struct AskAIResizeHandle: View {
 /// `NSView` ever saw the middle-click event at all.
 struct TabClickCatcher: NSViewRepresentable {
     var onSelect: () -> Void
+    var onClose: () -> Void
     var onMiddleClick: () -> Void
 
     func makeNSView(context: Context) -> ClickCatcherView {
         let view = ClickCatcherView()
         view.onSelect = onSelect
+        view.onClose = onClose
         view.onMiddleClick = onMiddleClick
         return view
     }
     func updateNSView(_ nsView: ClickCatcherView, context: Context) {
         nsView.onSelect = onSelect
+        nsView.onClose = onClose
         nsView.onMiddleClick = onMiddleClick
     }
 
     final class ClickCatcherView: NSView {
         var onSelect: (() -> Void)?
+        var onClose: (() -> Void)?
         var onMiddleClick: (() -> Void)?
         private var monitor: Any?
+        // ponytail: approximate hit width for the trailing "x" glyph (its
+        // padding + caption2 icon), not its exact rendered frame. Good enough
+        // for a small close target; measure the real SwiftUI frame if this
+        // ever needs to be pixel-exact.
+        private let closeHitWidth: CGFloat = 24
 
         // Neither a `mouseDown` nor an `otherMouseDown` override reliably fired
         // here — something else in the SwiftUI-composed hierarchy (this row
@@ -969,6 +982,14 @@ struct TabClickCatcher: NSViewRepresentable {
         // event monitor sidesteps that entirely: it sees every matching event
         // delivered to this window regardless of which view AppKit's own
         // hit-test would have picked, so we just check geometry ourselves.
+        //
+        // This view is the sole owner of every click in the pill (select,
+        // close, middle-click) rather than splitting close duty off to a
+        // separate SwiftUI Button layered on top — on some older macOS
+        // versions that Button lost the hit-testing race against this view
+        // and silently ate the click, so the "x" sometimes didn't close the
+        // tab at all. Deciding close-vs-select by geometry here is
+        // deterministic across macOS versions.
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             if let monitor { NSEvent.removeMonitor(monitor) }
@@ -979,7 +1000,11 @@ struct TabClickCatcher: NSViewRepresentable {
                 let point = self.convert(event.locationInWindow, from: nil)
                 guard self.bounds.contains(point) else { return event }
                 if event.type == .leftMouseDown {
-                    self.onSelect?()
+                    if point.x >= self.bounds.width - self.closeHitWidth {
+                        self.onClose?()
+                    } else {
+                        self.onSelect?()
+                    }
                 } else if event.buttonNumber == 2 {
                     self.onMiddleClick?()
                 }

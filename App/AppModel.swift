@@ -1236,18 +1236,25 @@ final class AppModel: ObservableObject {
     /// never makes sense.
     var selectedSessionIsSplittable: Bool {
         guard let id = selectedSessionID, let s = sessions.first(where: { $0.id == id }) else { return false }
-        return Self.splittableKinds.contains(s.kind)
+        return isSplittable(s)
     }
 
-    /// Whether the selected tab can gain another pane in `direction`. Once a tab
-    /// is split, its direction is locked in — the other direction's button stays
+    func isSplittable(_ session: Session) -> Bool {
+        Self.splittableKinds.contains(session.kind)
+    }
+
+    /// Whether `session`'s tab can gain another pane in `direction`. Once a tab
+    /// is split, its direction is locked in — the other direction stays
     /// disabled until the group is back down to a single pane.
+    func canSplit(_ session: Session, direction: Session.SplitDirection) -> Bool {
+        guard isSplittable(session) else { return false }
+        guard let groupID = session.splitGroupID else { return true }
+        return session.splitDirection == direction && splitGroupMembers(groupID).count < Self.maxSplitPanes
+    }
+
     func canSplitSelectedSession(direction: Session.SplitDirection) -> Bool {
-        guard let id = selectedSessionID, let s = sessions.first(where: { $0.id == id }),
-              Self.splittableKinds.contains(s.kind)
-        else { return false }
-        guard let groupID = s.splitGroupID else { return true }
-        return s.splitDirection == direction && splitGroupMembers(groupID).count < Self.maxSplitPanes
+        guard let id = selectedSessionID, let s = sessions.first(where: { $0.id == id }) else { return false }
+        return canSplit(s, direction: direction)
     }
 
     /// Adds a new pane to the selected tab, alongside its existing panes (if any).
@@ -1255,9 +1262,14 @@ final class AppModel: ObservableObject {
     /// group up to `maxSplitPanes` — the group's layout direction doesn't change.
     /// Duplicates the tab's own host; use `addSplitPane(_:)` for a different one.
     func splitSelectedSession(direction: Session.SplitDirection) {
-        guard let id = selectedSessionID, let idx = sessions.firstIndex(where: { $0.id == id }),
-              Self.splittableKinds.contains(sessions[idx].kind)
-        else { return }
+        guard let id = selectedSessionID, let s = sessions.first(where: { $0.id == id }) else { return }
+        split(s, direction: direction)
+    }
+
+    /// Adds a new pane to `session`'s tab — same as `splitSelectedSession` but
+    /// for any tab, not just the selected one (e.g. from a tab's context menu).
+    func split(_ session: Session, direction: Session.SplitDirection) {
+        guard isSplittable(session), let idx = sessions.firstIndex(where: { $0.id == session.id }) else { return }
         addPane(makeSession(for: sessions[idx].node), toTabAt: idx, direction: direction)
     }
 
