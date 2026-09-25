@@ -24,6 +24,7 @@
 #include <winpr/user.h>               // CF_UNICODETEXT / CF_DIB / CF_DIBV5
 
 #include <openssl/provider.h>
+#include <openssl/evp.h>
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -34,6 +35,10 @@ static UINT32 deviceScaleFor(int scalePercent) {
     if (scalePercent >= 140) return 140;
     return 100;
 }
+
+// Set by rdpcore_init_crypto: without MD4 (OpenSSL legacy provider) NTLM can't
+// compute the NT hash, and every NLA connection dies with a generic transport error.
+static bool md4Available = true;
 
 void rdpcore_init_crypto(const char *modules_dir) {
     static int done = 0;
@@ -57,8 +62,16 @@ void rdpcore_init_crypto(const char *modules_dir) {
     if (modules_dir && modules_dir[0]) {
         OSSL_PROVIDER_set_default_search_path(NULL, modules_dir);
     }
-    OSSL_PROVIDER_load(NULL, "legacy");
+    OSSL_PROVIDER *legacy = OSSL_PROVIDER_load(NULL, "legacy");
     OSSL_PROVIDER_load(NULL, "default");
+    // Remember the outcome: a missing legacy provider surfaces at connect time as
+    // the useless ERRCONNECT_CONNECT_TRANSPORT_FAILED, so say what really broke.
+    EVP_MD *md4 = EVP_MD_fetch(NULL, "MD4", NULL);
+    md4Available = (md4 != NULL);
+    EVP_MD_free(md4);
+    if (!md4Available)
+        WLog_ERR("mrng.crypto", "OpenSSL legacy provider unavailable (load=%p, search path=%s) "
+                 "- NTLM/NLA will fail", (void *)legacy, modules_dir ? modules_dir : "(built-in)");
 }
 
 void rdpcore_set_diagnostic_logging(int enabled, const char *dir) {
@@ -95,6 +108,7 @@ struct RDPCore {
     int port, width, height, scalePercent;
 
     DispClientContext *disp;
+    volatile int credentialsMissing; // FreeRDP asked us to prompt -> username/password empty
 
     // cliprdr is assigned on the RDP thread (channel connect) but read from the main
     // thread (clipboard senders); chanLock guards it so a disconnect racing a
@@ -298,6 +312,19 @@ static BOOL mrng_post_connect(freerdp *instance) {
 
 static void mrng_post_disconnect(freerdp *instance) { gdi_free(instance); }
 
+// FreeRDP's default handler prompts for missing credentials on stdin. In a GUI app
+// there is no terminal, so it fails with "tcgetattr() ... not supported by device"
+// and reports the whole connection as ERRCONNECT_CONNECT_CANCELLED — hiding the
+// real cause, which is simply an empty username or password. Refuse instead, and
+// remember that we did so the error message can say what actually happened.
+static BOOL mrng_authenticate_ex(freerdp *instance, char **username, char **password,
+                                 char **domain, rdp_auth_reason reason) {
+    (void)username; (void)password; (void)domain; (void)reason;
+    RDPCore *core = coreFromContext(instance->context);
+    core->credentialsMissing = 1;
+    return FALSE;
+}
+
 static DWORD mrng_verify_cert_ex(freerdp *instance, const char *host, UINT16 port,
                                  const char *common_name, const char *subject,
                                  const char *issuer, const char *fingerprint, DWORD flags) {
@@ -316,7 +343,11 @@ static void *thread_proc(void *arg) {
         UINT32 err = freerdp_get_last_error(core->context);
         const char *name = freerdp_get_last_error_name(err);
         char msg[256];
-        snprintf(msg, sizeof(msg), "Connection failed: %s", name ? name : "unknown");
+        if (core->credentialsMissing)
+            snprintf(msg, sizeof(msg), "Username or password is empty for this connection.");
+        else
+            snprintf(msg, sizeof(msg), "Connection failed: %s%s", name ? name : "unknown",
+                     md4Available ? "" : " (OpenSSL legacy provider missing - NTLM unavailable)");
         notifyDisconnected(core, msg);
         return NULL;
     }
@@ -359,6 +390,7 @@ static BOOL mrng_client_new(freerdp *instance, rdpContext *context) {
     instance->PostConnect = mrng_post_connect;
     instance->PostDisconnect = mrng_post_disconnect;
     instance->VerifyCertificateEx = mrng_verify_cert_ex;
+    instance->AuthenticateEx = mrng_authenticate_ex;
     PubSub_SubscribeChannelConnected(context->pubSub, on_channel_connected);
     PubSub_SubscribeChannelDisconnected(context->pubSub, on_channel_disconnected);
     return TRUE;

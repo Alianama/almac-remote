@@ -32,6 +32,16 @@ dylibbundler -od -b \
 # rpath duplicated; a second copy makes dyld refuse to load the binary.
 install_name_tool -delete_rpath "@executable_path/../Frameworks/" "$APP/Contents/MacOS/Almac Remote"
 
+# OpenSSL's legacy provider (MD4 -> NTLM -> RDP NLA) is dlopen'd at runtime, so
+# dylibbundler never sees it: the bundled libcrypto then falls back to its
+# compiled-in Cellar path, which dies the moment brew upgrades openssl and the
+# connection fails as a misleading ERRCONNECT_CONNECT_TRANSPORT_FAILED. Copy
+# the module in and point it at the libcrypto we just bundled, not /opt/homebrew.
+cp "$(brew --prefix openssl@3)/lib/ossl-modules/legacy.dylib" "$APP/Contents/Frameworks/"
+install_name_tool -change \
+  "$(otool -L "$APP/Contents/Frameworks/legacy.dylib" | awk '/libcrypto/{print $1; exit}')" \
+  "@loader_path/libcrypto.3.dylib" "$APP/Contents/Frameworks/legacy.dylib"
+
 codesign --force --deep -o runtime --timestamp=none \
   --entitlements App/AlmacRemote.entitlements --sign - "$APP"
 codesign -vv --deep-verify "$APP"
