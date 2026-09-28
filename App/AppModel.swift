@@ -1228,7 +1228,7 @@ final class AppModel: ObservableObject {
     }
 
     /// Kinds where an interactive shell makes sense to split — not RDP/HTTP/GUI sessions.
-    private static let splittableKinds: Set<Session.Kind> = [.ssh, .telnet, .sftp, .externalTool, .localShell]
+    private static let splittableKinds: Set<Session.Kind> = [.ssh, .telnet, .externalTool, .localShell]
     static let maxSplitPanes = 6
 
     /// Whether the selected session's kind can ever be split — used to hide
@@ -1381,6 +1381,7 @@ final class AppModel: ObservableObject {
         tunnels[id]?.stop()
         tunnels[id] = nil
         TerminalViewRegistry.shared.remove(id)
+        SFTPBrowserModel.remove(id)
         sessions.removeAll { $0.id == id }
         if selectedSessionID == id {
             // Prefer a session in the current panel; otherwise the last session.
@@ -1399,6 +1400,7 @@ final class AppModel: ObservableObject {
         tunnels[session.id]?.stop()
         tunnels[session.id] = nil
         TerminalViewRegistry.shared.remove(session.id)
+        SFTPBrowserModel.remove(session.id)
         var fresh = makeSession(for: session.node)
         fresh.splitGroupID = session.splitGroupID
         fresh.isSplitPrimary = session.isSplitPrimary
@@ -1540,19 +1542,63 @@ final class AppModel: ObservableObject {
     func addTool() { externalTools.append(ExternalTool(name: "New tool", commandLine: "")) }
     func deleteTool(_ tool: ExternalTool) { externalTools.removeAll { $0.id == tool.id } }
 
-    /// Open an SFTP tab (a terminal running sftp) for an SSH connection.
-    func openSFTP(_ node: MRNGNode) {
+    /// Open an SFTP tab (two-pane file browser, see SFTPBrowser.swift) for an SSH connection.
+    func openSFTP(_ node: MRNGNode, password: String? = nil) {
         guard !node.isContainer else { return }
         let session = Session(
             title: node.name + " (SFTP)",
             kind: .sftp,
             node: node,
-            password: decryptedPassword(for: node),
+            password: password ?? decryptedPassword(for: node),
             panel: node.panel.isEmpty ? "General" : node.panel
         )
         sessions.append(session)
         selectedSessionID = session.id
         selectedPanel = session.panel
+    }
+
+    /// FileZilla-style quick connect: host/port/user/password typed in, not
+    /// saved to the connections file (the throwaway node isn't in the doc, so
+    /// session restore skips it too). Host/port/user are remembered; the
+    /// password never is.
+    func quickSFTP() {
+        let d = UserDefaults.standard
+        // Plain frames, not NSGridView/Auto Layout: an accessory view sized via
+        // fittingSize left the fields uneditable (likely drawn outside its
+        // hit-test bounds).
+        let rowH: CGFloat = 30, labelW: CGFloat = 80, fieldW: CGFloat = 240
+        let box = NSView(frame: NSRect(x: 0, y: 0, width: labelW + fieldW, height: rowH * 4))
+        func field(_ row: Int, _ label: String, _ key: String, _ fallback: String = "", secure: Bool = false) -> NSTextField {
+            let y = CGFloat(3 - row) * rowH
+            let l = NSTextField(labelWithString: label)
+            l.frame = NSRect(x: 0, y: y + 3, width: labelW - 8, height: 20)
+            let f = secure ? NSSecureTextField(frame: .zero) : NSTextField(frame: .zero)
+            f.frame = NSRect(x: labelW, y: y, width: fieldW, height: 24)
+            f.stringValue = key.isEmpty ? "" : d.string(forKey: key) ?? fallback
+            box.addSubview(l)
+            box.addSubview(f)
+            return f
+        }
+        let host = field(0, "Host", "quickSFTP.host"), port = field(1, "Port", "quickSFTP.port", "22"),
+            user = field(2, "Username", "quickSFTP.user"), pass = field(3, "Password", "", secure: true)
+        host.nextKeyView = port; port.nextKeyView = user; user.nextKeyView = pass; pass.nextKeyView = host
+        let alert = NSAlert()
+        alert.messageText = t("Menu.QuickSFTP")
+        alert.accessoryView = box
+        alert.addButton(withTitle: t("Context.Connect"))
+        alert.addButton(withTitle: t("Delete.Cancel"))
+        alert.window.initialFirstResponder = host.stringValue.isEmpty ? host : pass
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let h = host.stringValue.trimmingCharacters(in: .whitespaces)
+        let u = user.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !h.isEmpty, let p = Int(port.stringValue), (1...65535).contains(p) else { return }
+        d.set(h, forKey: "quickSFTP.host")
+        d.set(String(p), forKey: "quickSFTP.port")
+        d.set(u, forKey: "quickSFTP.user")
+        let node = MRNGNode.makeConnection(name: u.isEmpty ? h : "\(u)@\(h)", hostname: h)
+        node.attributes["Port"] = String(p)
+        node.attributes["Username"] = u
+        openSFTP(node, password: pass.stringValue)
     }
 
     func renameSession(_ id: UUID, to title: String) {

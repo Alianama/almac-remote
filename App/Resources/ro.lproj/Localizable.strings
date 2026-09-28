@@ -16,6 +16,7 @@
 "Menu.NewFile" = "Configuratie noua...";
 "Menu.OpenFile" = "Deschide confCons.xml...";
 "Menu.NewLocalTerminal" = "Terminal local nou";
+"Menu.QuickSFTP" = "Conectare rapida SFTP…";
 "Terminal.LocalTitle" = "Terminal";
 "Menu.CloseFile" = "Inchide configuratia";
 "NewDoc.Prompt" = "Alege unde salvezi configuratia noua.";

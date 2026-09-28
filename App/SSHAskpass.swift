@@ -23,7 +23,7 @@ enum SSHAskpass {
         let script = """
         #!/bin/sh
         case "$1" in
-          *\\'s\\ password:*) exec echo "$MRNG_SSH_ASKPASS_SECRET" ;;
+          *\\'s\\ password:*) [ -n "$MRNG_SSH_ASKPASS_SECRET" ] && exec echo "$MRNG_SSH_ASKPASS_SECRET" ;;
         esac
         exec osascript \\
           -e 'on run argv' \\

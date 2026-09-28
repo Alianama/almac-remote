@@ -18,6 +18,7 @@
 "Menu.NewFile" = "New configuration...";
 "Menu.OpenFile" = "Open confCons.xml...";
 "Menu.NewLocalTerminal" = "New Local Terminal";
+"Menu.QuickSFTP" = "Quick Connect SFTP…";
 "Terminal.LocalTitle" = "Terminal";
 "Menu.CloseFile" = "Close configuration";
 "NewDoc.Prompt" = "Choose where to save the new configuration.";

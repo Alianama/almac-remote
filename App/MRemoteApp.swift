@@ -50,6 +50,8 @@ struct MRemoteApp: App {
                 Divider()
                 Button(t("Menu.NewLocalTerminal")) { model.openLocalTerminal() }
                     .keyboardShortcut("t", modifiers: [.command, .shift])
+                Button(t("Menu.QuickSFTP")) { model.quickSFTP() }
+                    .keyboardShortcut("f", modifiers: [.command, .shift])
                 Divider()
                 Button(t("Menu.CloseFile")) { model.closeDocument() }
                     .keyboardShortcut("w", modifiers: [.command, .shift])

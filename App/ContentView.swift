@@ -1025,7 +1025,9 @@ struct SessionView: View {
     var fontSize: Double = 13
     var body: some View {
         switch session.kind {
-        case .ssh, .telnet, .sftp, .externalTool, .localShell:
+        case .sftp:
+            SFTPBrowserView(session: session)
+        case .ssh, .telnet, .externalTool, .localShell:
             TerminalContainer(
                 session: session,
                 isActive: isActive,

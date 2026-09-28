@@ -312,7 +312,7 @@ final class TerminalViewRegistry {
 }
 
 /// SwiftUI wrapper over SwiftTerm's LocalProcessTerminalView. Spawns the system
-/// ssh/telnet/sftp in a PTY embedded in the tab.
+/// ssh/telnet in a PTY embedded in the tab.
 struct TerminalContainer: NSViewRepresentable {
     let session: Session
     let isActive: Bool
@@ -458,13 +458,6 @@ struct TerminalContainer: NSViewRepresentable {
             return ("/usr/bin/ssh", sshArgs)
         case .telnet:
             return ("/usr/bin/telnet", [host, "\(port)"])
-        case .sftp:
-            return ("/usr/bin/sftp", [
-                "-P", "\(port)", // SFTP uses uppercase -P for the port
-                "-o", "UserKnownHostsFile=\(appKnownHostsPath())",
-                "-o", "StrictHostKeyChecking=accept-new",
-                target,
-            ])
         case .externalTool:
             return ("/bin/sh", ["-lc", session.command ?? "echo 'no command'"])
         case .localShell:
