@@ -3,6 +3,7 @@
 // See LICENSE for full text.
 
 import SwiftUI
+import AppKit
 
 @main
 struct MRemoteApp: App {
@@ -18,6 +19,14 @@ struct MRemoteApp: App {
         // preferences window can't be merged into a tab group (must be in init,
         // applicationDidFinishLaunching is too late).
         NSWindow.allowsAutomaticWindowTabbing = false
+        // Icons-only toolbar: drop the right-click "Icon and Text / Text Only"
+        // options. SwiftUI installs the toolbar lazily, so lock it whenever a window becomes key.
+        NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { note in
+            guard let toolbar = (note.object as? NSWindow)?.toolbar else { return }
+            toolbar.displayMode = .iconOnly
+            toolbar.allowsUserCustomization = false
+            if #available(macOS 15.0, *) { toolbar.allowsDisplayModeCustomization = false }
+        }
         // Load OpenSSL's legacy provider so NTLM (MD4) works for RDP against
         // non-AD Windows hosts — otherwise NLA fails with a misleading
         // "transport failed". Must run before the first connection.
@@ -30,10 +39,18 @@ struct MRemoteApp: App {
                 .environmentObject(model)
                 .environmentObject(lang)
                 .frame(minWidth: 900, minHeight: 560)
+                .task {
+                    // Quiet check on launch; a toolbar button appears only if there is an update.
+                    if Updater.shared.autoCheck { await Updater.shared.check() }
+                }
         }
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button(t("Menu.About")) { AboutPanel.show() }
+                Button(t("Menu.CheckUpdates")) {
+                    openWindow(id: "updates")
+                    Task { await Updater.shared.check(manual: true) }
+                }
             }
             CommandGroup(replacing: .appSettings) {
                 Button(t("Settings.Title")) { openWindow(id: "preferences") }
@@ -113,6 +130,12 @@ struct MRemoteApp: App {
         }
         .windowResizability(.contentMinSize)
 
+        Window(t("Settings.Updates"), id: "updates") {
+            UpdateWindowView()
+                .environmentObject(lang)
+        }
+        .windowResizability(.contentSize)
+
         Window(t("Logs.Title"), id: "logs") {
             LogsWindowView()
         }
@@ -131,6 +154,8 @@ struct SettingsView: View {
                 .tabItem { Label(t("Settings.Tools"), systemImage: "wrench.and.screwdriver") }
             AISettings()
                 .tabItem { Label(t("Settings.AI"), systemImage: "sparkles") }
+            UpdateSettings()
+                .tabItem { Label(t("Settings.Updates"), systemImage: "arrow.down.circle") }
             LanguageSettings()
                 .tabItem { Label(t("Settings.Language"), systemImage: "globe") }
         }
@@ -146,6 +171,10 @@ struct AppearanceSettings: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         Form {
+            Section(t("Settings.Theme")) {
+                AppThemePicker(selection: $model.appTheme)
+                Text(t("Settings.ThemeNote")).font(.caption).foregroundStyle(.secondary)
+            }
             Section(t("Settings.Appearance")) {
                 VStack(alignment: .leading) {
                     Text(String(format: t("Settings.UIFontSize"), Int(model.uiFontSize)))
@@ -187,6 +216,20 @@ struct AppearanceSettings: View {
                         }
                     }
                 }
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+struct UpdateSettings: View {
+    @ObservedObject var updater = Updater.shared
+    var body: some View {
+        Form {
+            Section(t("Settings.Updates")) {
+                LabeledContent("Almac Remote", value: Updater.currentVersion)
+                Toggle(t("Update.AutoCheck"), isOn: $updater.autoCheck)
+                UpdatePanel()
             }
         }
         .formStyle(.grouped)

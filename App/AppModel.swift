@@ -150,6 +150,21 @@ final class AppModel: ObservableObject {
     @Published var terminalScrollback: Double = 5000 {
         didSet { UserDefaults.standard.set(terminalScrollback, forKey: "terminalScrollback") }
     }
+    @Published var appTheme: AppTheme = .native {
+        didSet {
+            UserDefaults.standard.set(appTheme.rawValue, forKey: "appTheme")
+            guard appTheme != oldValue else { return }
+            // Terminal follows the skin; leaving Classic remembers the user's own terminal theme
+            // so switching back restores it.
+            let key = "terminalThemeBeforePixel"
+            if oldValue == .native { UserDefaults.standard.set(terminalTheme, forKey: key) }
+            terminalTheme = appTheme == .native
+                ? UserDefaults.standard.string(forKey: key) ?? "Implicit"
+                : appTheme.terminalThemeName
+        }
+    }
+    /// nil = native macOS look.
+    var themePalette: AppTheme.Palette? { appTheme.palette }
     @Published var showProtocol: Bool = false {
         didSet { UserDefaults.standard.set(showProtocol, forKey: "showProtocol") }
     }
@@ -440,6 +455,7 @@ final class AppModel: ObservableObject {
         if let v = UserDefaults.standard.object(forKey: "askAIPanelWidth") as? Double { askAIPanelWidth = v }
         if let v = UserDefaults.standard.string(forKey: "aiProvider"), let p = AIProvider(rawValue: v) { aiProvider = p }
         if let v = UserDefaults.standard.object(forKey: "showProtocol") as? Bool { showProtocol = v }
+        if let v = UserDefaults.standard.string(forKey: "appTheme"), let th = AppTheme(rawValue: v) { appTheme = th }
         if let v = UserDefaults.standard.object(forKey: "sidebarShowsHostname") as? Bool { sidebarShowsHostname = v }
         if let v = UserDefaults.standard.object(forKey: "showPasswordPlain") as? Bool { showPasswordPlain = v }
         if let v = UserDefaults.standard.string(forKey: "cursorBlinkSpeed"),
@@ -1035,6 +1051,11 @@ final class AppModel: ObservableObject {
     func moveNode(_ node: MRNGNode, into newParent: MRNGNode?, at index: Int?) -> Bool {
         if let newParent {
             guard newParent !== node, !newParent.isDescendant(of: node), newParent.isContainer else { return false }
+        }
+        // A root-level node has no parent, so addChild/removeFromParent can't detach it:
+        // drop it from roots first or it ends up both at root and in the folder.
+        doc?.roots.removeAll { $0 === node }
+        if let newParent {
             newParent.addChild(node, at: index)
             expandedIDs.insert(newParent.id)
         } else {
@@ -1330,6 +1351,31 @@ final class AppModel: ObservableObject {
     /// once. Panes still mid-connect (proxy tunnel not ready, process not yet
     /// started) simply have nothing listening on the pty and drop it, same as
     /// typing into a not-yet-connected terminal would.
+    /// Terminal pane the Ask AI panel talks to: the focused one (nil for RDP/HTTP/SFTP tabs).
+    var activeTerminalTitle: String? {
+        guard let id = focusedSessionID, TerminalViewRegistry.shared.existing(for: id) != nil else { return nil }
+        return sessions.first { $0.id == id }?.title
+    }
+
+    /// Types `text` into the focused terminal; `execute` presses Return after it.
+    @discardableResult
+    func sendToActiveTerminal(_ text: String, execute: Bool) -> Bool {
+        guard let id = focusedSessionID, let entry = TerminalViewRegistry.shared.existing(for: id) else { return false }
+        let body = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\n", with: "\r")
+        entry.term.send(data: Array((execute ? body + "\r" : body).utf8)[...])
+        return true
+    }
+
+    /// Last `lines` non-blank lines of the focused terminal (scrollback included), for AI context.
+    func activeTerminalOutput(lines: Int = 120) -> String? {
+        guard let id = focusedSessionID, let entry = TerminalViewRegistry.shared.existing(for: id) else { return nil }
+        let data = entry.term.getTerminal().getBufferAsData()
+        let all = String(decoding: data, as: UTF8.self).components(separatedBy: "\n")
+            .map { $0.replacingOccurrences(of: "\\s+$", with: "", options: .regularExpression) }
+            .filter { !$0.isEmpty }
+        return all.suffix(lines).joined(separator: "\n")
+    }
+
     func broadcastCommand(_ text: String, toGroup groupID: UUID) {
         guard !text.isEmpty else { return }
         let bytes = Array((text + "\r").utf8)[...]

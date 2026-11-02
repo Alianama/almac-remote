@@ -24,6 +24,8 @@ struct AskAIPanel: View {
     /// Empty = use that provider's configured default (Settings > AI).
     @State private var selectedModelID: String = ""
     @State private var attachedFile: AttachedFile?
+    /// Send the focused terminal's recent output along with the question.
+    @State private var includeTerminal = false
     @State private var currentHandle: AIAskHandle?
     /// Set right before cancelling, so the in-flight Task's completion
     /// silently discards the terminated process's result instead of posting
@@ -89,14 +91,16 @@ struct AskAIPanel: View {
         // automatically to its leading column, not a plain solid color, so a
         // flat Color(NSColor.windowBackgroundColor) here looked visibly
         // different even though both were "dark".
-        .background(SidebarMaterialView())
+        .background {
+            if let p = model.themePalette { PixelBackground(palette: p).overlay(p.glass) } else { SidebarMaterialView() }
+        }
     }
 
     // MARK: - Header
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text(t("AskAI.Title")).font(.headline)
+            Text(t("AskAI.Title")).font(model.themePalette == nil ? .headline : .system(.headline, design: .monospaced))
             Spacer()
             // A real drag-selection spanning every message bubble isn't
             // available in SwiftUI (each bubble is its own isolated
@@ -129,6 +133,12 @@ struct AskAIPanel: View {
             Button { pickFile() } label: { Image(systemName: "paperclip") }
                 .buttonStyle(.plain)
                 .help(t("AskAI.AttachFile"))
+            if model.activeTerminalTitle != nil {
+                Button { includeTerminal.toggle() } label: { Image(systemName: "terminal") }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(includeTerminal ? Color.accentColor : .primary)
+                    .help(t("AskAI.TerminalContext"))
+            }
             // Explicit width caps (not .fixedSize()) — a menu-style Picker
             // otherwise sizes itself to its WIDEST row across every item,
             // not just the current selection, which was overflowing this
@@ -231,11 +241,34 @@ struct AskAIPanel: View {
     // MARK: - Empty state
 
     private var emptyState: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             Spacer()
-            Image(systemName: "sparkles").font(.system(size: 28)).foregroundStyle(.secondary)
-            Text(t("AskAI.Placeholder")).font(.callout).foregroundStyle(.secondary)
+            Image(systemName: "sparkles").font(.system(size: 30)).foregroundStyle(Color.accentColor)
+            Text(t("AskAI.Welcome")).font(.title3.bold())
+            Text(t("AskAI.Hint")).font(.caption).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center).padding(.horizontal, 20)
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(["AskAI.Suggest1", "AskAI.Suggest2", "AskAI.Suggest3"], id: \.self) { key in
+                    Button {
+                        input = t(key)
+                        if model.activeTerminalTitle != nil, key != "AskAI.Suggest2" { includeTerminal = true }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "lightbulb").foregroundStyle(.secondary)
+                            Text(t(key)).multilineTextAlignment(.leading)
+                            Spacer(minLength: 0)
+                        }
+                        .font(.callout)
+                        .padding(.horizontal, 10).padding(.vertical, 7)
+                        .background(Color.secondary.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+                        .overlay(RoundedRectangle(cornerRadius: Self.cornerRadius).stroke(Color.secondary.opacity(0.2)))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 14).padding(.top, 6)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -283,56 +316,66 @@ struct AskAIPanel: View {
     @ViewBuilder private func bubble(_ msg: AIChatMessage) -> some View {
         switch msg.role {
         case .user:
-            HStack {
-                Spacer(minLength: 30)
+            VStack(alignment: .leading, spacing: 4) {
+                Label(t("AskAI.You"), systemImage: "person.crop.circle.fill")
+                    .font(.caption.bold()).foregroundStyle(.secondary)
                 MarkdownMessageView(text: msg.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
-                    .background(Color.accentColor.opacity(0.85))
-                    .foregroundStyle(.white)
+                    .background(Color.accentColor.opacity(0.14))
                     .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
-                    // Guaranteed to work even where drag-select-then-⌘C doesn't
-                    // (that path fights the composer's own text view for first
-                    // responder) — right-click always copies the full message.
+                    .overlay(RoundedRectangle(cornerRadius: Self.cornerRadius).stroke(Color.accentColor.opacity(0.35)))
+                    .pixelBox(model.themePalette, fill: model.themePalette?.active)
+                    // Right-click always copies the full message, even where
+                    // drag-select-then-⌘C fights the composer for first responder.
                     .contextMenu {
                         Button(t("AskAI.CopyResponse")) { copyToClipboard(msg.text) }
+                        Button(t("AskAI.EditResend")) { input = msg.text }
                     }
             }
         case .assistant:
-            VStack(alignment: .trailing, spacing: 3) {
-                HStack {
-                    MarkdownMessageView(text: msg.text)
-                        .padding(8)
-                        .background(Color.secondary.opacity(0.15))
-                        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
-                        .contextMenu {
-                            Button(t("AskAI.CopyResponse")) { copyToClipboard(msg.text) }
-                        }
-                    Spacer(minLength: 30)
-                }
+            // Copilot-chat style: no bubble, full width, provider header + action footer.
+            VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
-                    if let usage = msg.usage, usage.usedTokens != nil || usage.costUSD != nil {
-                        usageCaption(usage)
-                    }
-                    Button { copyToClipboard(msg.text) } label: { Image(systemName: "doc.on.doc") }
-                        .buttonStyle(.plain)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .help(t("AskAI.CopyResponse"))
+                    Image(systemName: "sparkles").foregroundStyle(Color.accentColor)
+                    Text(msg.provider?.displayName ?? "AI").font(.caption.bold())
+                    Text(msg.date, style: .time).font(.caption2).foregroundStyle(.tertiary)
+                    Spacer()
                 }
-                .padding(.trailing, 4)
-            }
-        case .error:
-            HStack {
-                Text(msg.text)
-                    .textSelection(.enabled)
-                    .foregroundStyle(.red)
-                    .padding(8)
-                    .background(Color.red.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+                MarkdownMessageView(text: msg.text)
                     .contextMenu {
                         Button(t("AskAI.CopyResponse")) { copyToClipboard(msg.text) }
                     }
-                Spacer(minLength: 30)
+                HStack(spacing: 10) {
+                    Button { copyToClipboard(msg.text) } label: { Image(systemName: "doc.on.doc") }
+                        .help(t("AskAI.CopyResponse"))
+                    if msg.id == messages.last?.id, let prompt = messages.last(where: { $0.role == .user })?.text {
+                        Button { input = prompt } label: { Image(systemName: "arrow.uturn.backward") }
+                            .help(t("AskAI.EditResend"))
+                    }
+                    if let usage = msg.usage, usage.usedTokens != nil || usage.costUSD != nil {
+                        usageCaption(usage)
+                    }
+                    Spacer()
+                }
+                .buttonStyle(.plain)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 4)
+        case .error:
+            Label {
+                Text(msg.text).textSelection(.enabled)
+            } icon: {
+                Image(systemName: "exclamationmark.triangle.fill")
+            }
+            .foregroundStyle(.red)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+            .background(Color.red.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+            .contextMenu {
+                Button(t("AskAI.CopyResponse")) { copyToClipboard(msg.text) }
             }
         }
     }
@@ -384,6 +427,18 @@ struct AskAIPanel: View {
                 .background(Color.secondary.opacity(0.12))
                 .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
             }
+            if includeTerminal, let title = model.activeTerminalTitle {
+                HStack(spacing: 6) {
+                    Image(systemName: "terminal").font(.caption)
+                    Text(String(format: t("AskAI.TerminalChip"), title)).font(.caption).lineLimit(1)
+                    Spacer()
+                    Button { includeTerminal = false } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(Color.accentColor.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+            }
             // One unified rounded container — text field and the model/attach/send
             // footer share a single border, matching a Claude-Code-style composer,
             // instead of two separately-boxed pieces stacked on top of each other.
@@ -404,6 +459,7 @@ struct AskAIPanel: View {
             .background(Color.secondary.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
             .overlay(RoundedRectangle(cornerRadius: Self.cornerRadius).stroke(Color.secondary.opacity(0.3)))
+            .pixelBox(model.themePalette, fill: model.themePalette?.glassStrong)
         }
         .padding(10)
     }
@@ -432,15 +488,20 @@ struct AskAIPanel: View {
         attachedFile = nil
         let provider = effectiveProvider
         let sessionID = model.ensureActiveAIChatSession()
-        let displayText = file.map { "\(q)\n\n📎 \($0.name)" } ?? q
+        let terminalTitle = includeTerminal ? model.activeTerminalTitle : nil
+        let terminalOutput = terminalTitle != nil ? model.activeTerminalOutput() : nil
+        includeTerminal = false
+        var displayText = file.map { "\(q)\n\n📎 \($0.name)" } ?? q
+        if let terminalTitle { displayText += "\n\n🖥 \(terminalTitle)" }
         model.appendAIChatMessage(AIChatMessage(role: .user, text: displayText, provider: provider), toSession: sessionID)
         // The file's content only goes to the CLI, not the chat bubble — keeps
         // the visible transcript readable while still giving the model the text.
-        let sendPrompt: String
+        var sendPrompt = q
         if let file {
-            sendPrompt = "<file path=\"\(file.path)\">\n\(file.content)\n</file>\n\n\(q)"
-        } else {
-            sendPrompt = q
+            sendPrompt = "<file path=\"\(file.path)\">\n\(file.content)\n</file>\n\n\(sendPrompt)"
+        }
+        if let terminalTitle, let terminalOutput {
+            sendPrompt = "<terminal session=\"\(terminalTitle)\">\n\(terminalOutput)\n</terminal>\n\n\(sendPrompt)"
         }
         isRunning = true
         isCancelling = false
@@ -478,55 +539,138 @@ struct AskAIPanel: View {
     }
 }
 
-/// Renders chat text as light markdown (bold/italic/links/inline code) with
-/// fenced ``` code blocks ``` broken out into their own monospaced,
-/// horizontally-scrollable boxes — native `AttributedString(markdown:)`,
-/// no external Markdown package needed.
+/// Renders chat markdown block by block (headings, lists, task lists, quotes,
+/// tables, rules, fenced code) — native `AttributedString(markdown:)` for the
+/// inline parts, no external Markdown package. Code blocks get Copy plus
+/// Insert / Run into the focused terminal, Copilot-chat style.
 struct MarkdownMessageView: View {
+    @EnvironmentObject var model: AppModel
     let text: String
 
-    private enum Segment { case text(String), code(String?, String) }
+    enum Block: Equatable {
+        case paragraph(String)
+        case heading(Int, String)
+        case listItem(indent: Int, marker: String, checked: Bool?, text: String)
+        case quote(String)
+        case code(String?, String)
+        case table([String], [[String]])
+        case rule
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-                switch segment {
-                case .text(let s):
-                    if !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(Self.renderInline(s)).textSelection(.enabled)
-                    }
-                case .code(let lang, let code):
-                    codeBlock(lang: lang, code: code)
-                }
+            ForEach(Array(Self.parse(text).enumerated()), id: \.offset) { _, block in
+                view(for: block)
             }
         }
     }
 
-    private var segments: [Segment] {
-        var result: [Segment] = []
-        var remaining = ArraySlice(text.components(separatedBy: "\n"))
-        var textLines: [String] = []
-        while let line = remaining.first {
-            remaining = remaining.dropFirst()
-            if line.hasPrefix("```") {
-                if !textLines.isEmpty {
-                    result.append(.text(textLines.joined(separator: "\n")))
-                    textLines = []
+    @ViewBuilder private func view(for block: Block) -> some View {
+        switch block {
+        case .paragraph(let s):
+            Text(Self.renderInline(s)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+        case .heading(let level, let s):
+            Text(Self.renderInline(s))
+                .font(level == 1 ? .title3.bold() : level == 2 ? .headline : .subheadline.bold())
+                .padding(.top, 4)
+                .textSelection(.enabled)
+        case .listItem(let indent, let marker, let checked, let s):
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if let checked {
+                    Image(systemName: checked ? "checkmark.square.fill" : "square")
+                        .foregroundStyle(checked ? Color.accentColor : .secondary)
+                } else {
+                    Text(marker).foregroundStyle(.secondary).monospacedDigit()
                 }
-                let lang = line.dropFirst(3).trimmingCharacters(in: .whitespaces)
-                var codeLines: [String] = []
-                while let codeLine = remaining.first, !codeLine.hasPrefix("```") {
-                    codeLines.append(codeLine)
-                    remaining = remaining.dropFirst()
+                Text(Self.renderInline(s)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.leading, CGFloat(indent) * 14)
+        case .quote(let s):
+            Text(Self.renderInline(s))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .padding(.leading, 10)
+                .overlay(alignment: .leading) { Rectangle().fill(Color.accentColor.opacity(0.6)).frame(width: 3) }
+        case .code(let lang, let code):
+            codeBlock(lang: lang, code: code)
+        case .table(let header, let rows):
+            table(header: header, rows: rows)
+        case .rule:
+            Divider().padding(.vertical, 2)
+        }
+    }
+
+    // MARK: Parsing
+
+    static func parse(_ text: String) -> [Block] {
+        var blocks: [Block] = []
+        var para: [String] = []
+        var quote: [String] = []
+        func flush() {
+            if !para.isEmpty { blocks.append(.paragraph(para.joined(separator: "\n"))); para = [] }
+            if !quote.isEmpty { blocks.append(.quote(quote.joined(separator: "\n"))); quote = [] }
+        }
+        let lines = text.components(separatedBy: "\n")
+        var i = 0
+        while i < lines.count {
+            let line = lines[i]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            i += 1
+            if trimmed.hasPrefix("```") {
+                flush()
+                let lang = trimmed.dropFirst(3).trimmingCharacters(in: .whitespaces)
+                var code: [String] = []
+                while i < lines.count, !lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                    code.append(lines[i]); i += 1
                 }
-                if remaining.first?.hasPrefix("```") == true { remaining = remaining.dropFirst() }
-                result.append(.code(lang.isEmpty ? nil : lang, codeLines.joined(separator: "\n")))
+                i += 1 // closing fence (or past the end if the reply was cut off)
+                blocks.append(.code(lang.isEmpty ? nil : lang, code.joined(separator: "\n")))
+            } else if trimmed.isEmpty {
+                flush()
+            } else if let m = trimmed.firstMatch(of: /^(#{1,6})\s+(.*)$/) {
+                flush()
+                blocks.append(.heading(m.1.count, String(m.2)))
+            } else if trimmed.wholeMatch(of: /([-*_])\s*(\1\s*){2,}/) != nil {
+                flush()
+                blocks.append(.rule)
+            } else if trimmed.hasPrefix(">") {
+                if !para.isEmpty { flush() }
+                quote.append(String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces))
+            } else if let m = line.firstMatch(of: /^(\s*)([-*+]|\d+[.)])\s+(.*)$/) {
+                flush()
+                let indent = m.1.replacingOccurrences(of: "\t", with: "  ").count / 2
+                var body = String(m.3)
+                var checked: Bool?
+                if let task = body.firstMatch(of: /^\[([ xX])\]\s+(.*)$/) {
+                    checked = task.1 != " "
+                    body = String(task.2)
+                }
+                let marker = m.2.first?.isNumber == true ? String(m.2) : "•"
+                blocks.append(.listItem(indent: indent, marker: marker, checked: checked, text: body))
+            } else if trimmed.hasPrefix("|"), i < lines.count,
+                      lines[i].trimmingCharacters(in: .whitespaces).wholeMatch(of: /\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?/) != nil {
+                flush()
+                let header = cells(trimmed)
+                i += 1 // separator row
+                var rows: [[String]] = []
+                while i < lines.count, lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("|") {
+                    rows.append(cells(lines[i])); i += 1
+                }
+                blocks.append(.table(header, rows))
             } else {
-                textLines.append(line)
+                if !quote.isEmpty { flush() }
+                para.append(line)
             }
         }
-        if !textLines.isEmpty { result.append(.text(textLines.joined(separator: "\n"))) }
-        return result
+        flush()
+        return blocks
+    }
+
+    private static func cells(_ row: String) -> [String] {
+        var s = row.trimmingCharacters(in: .whitespaces)
+        if s.hasPrefix("|") { s.removeFirst() }
+        if s.hasSuffix("|") { s.removeLast() }
+        return s.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
     private static func renderInline(_ s: String) -> AttributedString {
@@ -535,35 +679,71 @@ struct MarkdownMessageView: View {
             ?? AttributedString(s)
     }
 
-    @ViewBuilder private func codeBlock(lang: String?, code: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                if let lang {
-                    Text(lang).font(.caption2).foregroundStyle(.secondary)
+    // MARK: Pieces
+
+    private func table(header: [String], rows: [[String]]) -> some View {
+        Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
+            GridRow {
+                ForEach(Array(header.enumerated()), id: \.offset) { _, c in
+                    Text(Self.renderInline(c)).bold()
                 }
+            }
+            Divider().gridCellUnsizedAxes(.horizontal)
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                GridRow {
+                    ForEach(0..<header.count, id: \.self) { col in
+                        Text(Self.renderInline(col < row.count ? row[col] : "")).textSelection(.enabled)
+                    }
+                }
+            }
+        }
+        .font(.callout)
+        .padding(8)
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+    }
+
+    private static let shellLangs: Set<String> = ["", "sh", "bash", "zsh", "shell", "console", "fish",
+                                                  "powershell", "ps1", "pwsh", "cmd", "bat"]
+
+    @ViewBuilder private func codeBlock(lang: String?, code: String) -> some View {
+        let canRun = model.activeTerminalTitle != nil && Self.shellLangs.contains((lang ?? "").lowercased())
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Text(lang ?? "code").font(.caption2.monospaced()).foregroundStyle(.secondary)
                 Spacer()
-                // A dedicated copy button per code block — a horizontal-drag
-                // selection here fights the block's own horizontal scrolling
-                // (same class of bug the outer chat history's LazyVStack had),
-                // so this is the one guaranteed-reliable way to grab the code.
+                if canRun {
+                    Button { model.sendToActiveTerminal(code, execute: false) } label: {
+                        Image(systemName: "text.insert")
+                    }
+                    .help(t("AskAI.Insert"))
+                    Button { model.sendToActiveTerminal(code, execute: true) } label: {
+                        Label(t("AskAI.RunShort"), systemImage: "play.fill")
+                    }
+                    .help(t("AskAI.Run"))
+                }
+                // A dedicated copy button per code block — dragging a selection
+                // inside the block is unreliable, this always works.
                 Button { copyStringToPasteboard(code) } label: { Image(systemName: "doc.on.doc") }
-                    .buttonStyle(.plain)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
                     .help(t("AskAI.CopyResponse"))
             }
-            // Wrap instead of horizontal-scroll: removes the competing
-            // horizontal-drag gesture entirely, which was also intermittently
-            // hiding the text mid-selection, not just blocking the copy.
+            .buttonStyle(.plain)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8).padding(.vertical, 5)
+            .background(Color.secondary.opacity(0.12))
+            // Wrap instead of horizontal-scroll: a competing horizontal drag
+            // gesture was hiding the text mid-selection.
             Text(code)
                 .font(.system(.callout, design: .monospaced))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
         }
-        .padding(8)
-        .background(Color.secondary.opacity(0.18))
+        .background(Color.black.opacity(0.18))
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.25)))
+        .pixelBox(model.themePalette, fill: model.themePalette?.glassStrong, lift: 2)
     }
 }
 

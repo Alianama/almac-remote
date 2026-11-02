@@ -309,3 +309,31 @@
 "Logs.Reveal" = "Show in Finder";
 "Logs.Clear" = "Clear";
 "Logs.Refresh" = "Refresh";
+
+/* Ask AI — rich panel */
+"AskAI.Welcome" = "How can I help?";
+"AskAI.You" = "You";
+"AskAI.Run" = "Run in the active terminal";
+"AskAI.RunShort" = "Run";
+"AskAI.Insert" = "Insert into the active terminal (without running)";
+"AskAI.EditResend" = "Edit & resend";
+"AskAI.TerminalContext" = "Include the active terminal's recent output";
+"AskAI.TerminalChip" = "Output of %@";
+"AskAI.Suggest1" = "Explain the last error in this terminal and how to fix it";
+"AskAI.Suggest2" = "Write a command to find what is using the most disk space";
+"AskAI.Suggest3" = "Summarize what happened in this terminal session";
+
+/* Theme & updates */
+"Settings.Theme" = "Theme";
+"Settings.ThemeNote" = "Classic keeps the native macOS look. Pixel themes recolor the window, sidebar and Ask AI panel.";
+"Settings.Updates" = "Updates";
+"Update.Check" = "Check for updates";
+"Update.Checking" = "Checking…";
+"Update.Latest" = "You're on the latest version (%@).";
+"Update.Available" = "Version %@ is available.";
+"Update.Download" = "Download & install";
+"Update.Downloading" = "Downloading… %d%%";
+"Update.Ready" = "Update downloaded. Restart to finish.";
+"Update.Restart" = "Restart now";
+"Update.AutoCheck" = "Check for updates automatically";
+"Menu.CheckUpdates" = "Check for Updates…";

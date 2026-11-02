@@ -307,3 +307,31 @@
 "Logs.Reveal" = "Pokaz w Finderze";
 "Logs.Clear" = "Wyczysc";
 "Logs.Refresh" = "Odswiez";
+
+/* Ask AI — rich panel */
+"AskAI.Welcome" = "W czym mogę pomóc?";
+"AskAI.You" = "Ty";
+"AskAI.Run" = "Uruchom w aktywnym terminalu";
+"AskAI.RunShort" = "Uruchom";
+"AskAI.Insert" = "Wstaw do aktywnego terminala (bez uruchamiania)";
+"AskAI.EditResend" = "Edytuj i wyślij ponownie";
+"AskAI.TerminalContext" = "Dołącz ostatnie wyjście aktywnego terminala";
+"AskAI.TerminalChip" = "Wyjście z %@";
+"AskAI.Suggest1" = "Wyjaśnij ostatni błąd w tym terminalu i jak go naprawić";
+"AskAI.Suggest2" = "Napisz polecenie, które znajdzie, co zajmuje najwięcej miejsca na dysku";
+"AskAI.Suggest3" = "Podsumuj, co wydarzyło się w tej sesji terminala";
+
+/* Theme & updates */
+"Settings.Theme" = "Motyw";
+"Settings.ThemeNote" = "Classic zachowuje natywny wygląd macOS. Motywy pikselowe zmieniają kolory okna, paska bocznego i panelu Ask AI.";
+"Settings.Updates" = "Aktualizacje";
+"Update.Check" = "Sprawdź aktualizacje";
+"Update.Checking" = "Sprawdzanie…";
+"Update.Latest" = "Masz najnowszą wersję (%@).";
+"Update.Available" = "Dostępna jest wersja %@.";
+"Update.Download" = "Pobierz i zainstaluj";
+"Update.Downloading" = "Pobieranie… %d%%";
+"Update.Ready" = "Aktualizacja pobrana. Uruchom ponownie, aby zakończyć.";
+"Update.Restart" = "Uruchom ponownie";
+"Update.AutoCheck" = "Automatycznie sprawdzaj aktualizacje";
+"Menu.CheckUpdates" = "Sprawdź aktualizacje…";

@@ -309,3 +309,31 @@
 "Logs.Reveal" = "Arata in Finder";
 "Logs.Clear" = "Sterge";
 "Logs.Refresh" = "Reincarca";
+
+/* Ask AI — rich panel */
+"AskAI.Welcome" = "Cu ce te pot ajuta?";
+"AskAI.You" = "Tu";
+"AskAI.Run" = "Ruleaza in terminalul activ";
+"AskAI.RunShort" = "Ruleaza";
+"AskAI.Insert" = "Insereaza in terminalul activ (fara rulare)";
+"AskAI.EditResend" = "Editeaza si retrimite";
+"AskAI.TerminalContext" = "Include iesirea recenta a terminalului activ";
+"AskAI.TerminalChip" = "Iesirea din %@";
+"AskAI.Suggest1" = "Explica ultima eroare din acest terminal si cum o repar";
+"AskAI.Suggest2" = "Scrie o comanda care gaseste ce ocupa cel mai mult spatiu pe disc";
+"AskAI.Suggest3" = "Rezuma ce s-a intamplat in aceasta sesiune de terminal";
+
+/* Theme & updates */
+"Settings.Theme" = "Tema";
+"Settings.ThemeNote" = "Classic pastreaza aspectul nativ macOS. Temele pixel recoloreaza fereastra, bara laterala si panoul Ask AI.";
+"Settings.Updates" = "Actualizari";
+"Update.Check" = "Cauta actualizari";
+"Update.Checking" = "Se verifica…";
+"Update.Latest" = "Ai cea mai noua versiune (%@).";
+"Update.Available" = "Versiunea %@ este disponibila.";
+"Update.Download" = "Descarca si instaleaza";
+"Update.Downloading" = "Se descarca… %d%%";
+"Update.Ready" = "Actualizare descarcata. Reporneste pentru a termina.";
+"Update.Restart" = "Reporneste acum";
+"Update.AutoCheck" = "Cauta actualizari automat";
+"Menu.CheckUpdates" = "Cauta actualizari…";

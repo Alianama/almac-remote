@@ -40,7 +40,7 @@ enum TerminalThemes {
               let data = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode([String: TerminalTheme].self, from: data)
         else { return [:] }
-        return decoded
+        return decoded.merging(AppTheme.pixelTerminalThemes(base: decoded)) { _, pixel in pixel }
     }
 
     // SwiftTerm's default ANSI palette (for restoring the "Implicit" theme).

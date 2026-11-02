@@ -227,6 +227,7 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.18), value: model.showAskAI)
+        .appThemed(model.themePalette)
     }
 
     @ViewBuilder private var mainContent: some View {
@@ -275,9 +276,7 @@ struct ContentView: View {
                     Button { openWindow(id: "preferences") } label: { Image(systemName: "gearshape.fill") }
                         .help(t("Settings.Title"))
                 }
-                ToolbarItem(placement: .principal) {
-                    if !model.sessions.isEmpty { PanelTabBar() }
-                }
+                ToolbarItem(placement: .primaryAction) { UpdateToolbarButton() }
             }
             .disabled(model.isLocked)
             .sheet(isPresented: $model.showThemePicker) {
@@ -344,6 +343,7 @@ struct ContentView: View {
                 // Read-only status bar with Host/User/Pass + click-to-copy.
                 ConnectionStatusBar()
             }
+            .background { if let p = model.themePalette { PixelBackground(palette: p) } }
         } else {
             VStack(spacing: 8) {
                 Image(systemName: "tray")
@@ -378,6 +378,7 @@ struct ContentView: View {
                 }
             }
         }
+        .background { if let p = model.themePalette { PixelBackground(palette: p) } }
     }
 
     /// A single pane, or its whole split group (up to `AppModel.maxSplitPanes`
@@ -481,7 +482,7 @@ struct TreeRow: View {
         model.dropIndicator?.id == row.node.id && model.dropIndicator?.pos == .into
     }
     private var rowFill: Color {
-        if model.selectedNodeID == row.node.id { return Color.accentColor.opacity(0.22) }
+        if model.selectedNodeID == row.node.id { return model.themePalette?.active ?? Color.accentColor.opacity(0.22) }
         if isDropInto { return Color.accentColor.opacity(0.30) }
         if hovering { return Color.primary.opacity(0.07) }
         return .clear
@@ -775,29 +776,6 @@ struct NodeRow: View {
     }
 }
 
-struct PanelTabBar: View {
-    @EnvironmentObject var model: AppModel
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                ForEach(model.panels(), id: \.self) { panel in
-                    Button { model.selectPanel(panel) } label: {
-                        Text(panel)
-                            .font(.callout)
-                            .fontWeight(panel == model.selectedPanel ? .semibold : .regular)
-                            .padding(.horizontal, 12).padding(.vertical, 5)
-                            .background(panel == model.selectedPanel ? Color.accentColor.opacity(0.22) : Color.clear)
-                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.borderless)
-                }
-            }
-            .padding(.horizontal, 8).padding(.vertical, 4)
-        }
-    }
-}
-
 struct SessionTabBar: View {
     @EnvironmentObject var model: AppModel
     // Matches a populated tab pill's natural height (icon/text + its padding) — fixed
@@ -845,9 +823,12 @@ struct SessionTabBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
                 ForEach(model.sessions(inPanel: model.selectedPanel)) { session in
+                    let selected = session.id == model.selectedSessionID
+                    let palette = model.themePalette
                     HStack(spacing: 6) {
                         NodeIconView(node: session.node).frame(width: 14, height: 14)
                         Text(session.title).lineLimit(1)
+                            .font(palette == nil ? nil : .system(.body, design: .monospaced).weight(selected ? .bold : .regular))
                         // Plain image, not a Button: on some older macOS versions the
                         // SwiftUI Button here lost the hit-testing race against the
                         // TabClickCatcher NSView behind it (that ordering is an AppKit/
@@ -859,9 +840,9 @@ struct SessionTabBar: View {
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(session.id == model.selectedSessionID
-                                ? Color.accentColor.opacity(0.22) : Color.clear)
+                    .background(selected && palette == nil ? Color.accentColor.opacity(0.22) : Color.clear)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .pixelBox(selected ? palette : nil, fill: palette?.active, lift: 2)
                     .background(TabClickCatcher(
                         onSelect: { model.selectedSessionID = session.id },
                         onClose: { model.closeSession(session.id) },
@@ -893,6 +874,22 @@ struct SessionTabBar: View {
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
+        }
+    }
+}
+
+/// Shows up only once an update was found (launch check or manual), like Almac Browser's badge.
+struct UpdateToolbarButton: View {
+    @ObservedObject var updater = Updater.shared
+    @State private var open = false
+    var body: some View {
+        if [.available, .downloading, .ready].contains(updater.status) {
+            Button { open = true } label: {
+                Image(systemName: updater.status == .ready ? "arrow.clockwise.circle.fill" : "arrow.down.circle.fill")
+                    .foregroundStyle(Color.accentColor)
+            }
+            .help(String(format: t("Update.Available"), updater.version))
+            .popover(isPresented: $open) { UpdatePanel().padding().frame(width: 320) }
         }
     }
 }
@@ -990,6 +987,11 @@ struct TabClickCatcher: NSViewRepresentable {
         // and silently ate the click, so the "x" sometimes didn't close the
         // tab at all. Deciding close-vs-select by geometry here is
         // deterministic across macOS versions.
+        // Clicks reach us through the event monitor, so never claim hit-testing:
+        // on macOS 15 Sequoia this NSView otherwise swallowed right-clicks and
+        // the pill's SwiftUI .contextMenu never opened.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             if let monitor { NSEvent.removeMonitor(monitor) }
